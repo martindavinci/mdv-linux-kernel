@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import os
+import shutil
+import stat
 import subprocess
 import sys
+import tempfile
+import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILL_DIR = os.path.join(REPO_ROOT, "skills", "mdv-linux-kernel")
@@ -59,3 +63,32 @@ class GitRepo:
         self.git("commit", "-q", "--allow-empty", "--cleanup=verbatim",
                  "-F", msg_file, env=env)
         return self.git("rev-parse", "HEAD")
+
+
+def _force_remove(func, path, _exc):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def make_tmpdir(testcase: unittest.TestCase) -> str:
+    """Temporary directory removed at test cleanup (git objects are read-only on Windows)."""
+    path = tempfile.mkdtemp(prefix="mlk-test-")
+    if sys.version_info >= (3, 12):
+        testcase.addCleanup(shutil.rmtree, path, onexc=_force_remove)
+    else:
+        testcase.addCleanup(shutil.rmtree, path, onerror=_force_remove)
+    return path
+
+
+def run_script(name: str, *args: str, cwd: str | None = None,
+               stdin: str | None = None) -> subprocess.CompletedProcess:
+    """Run skills/mdv-linux-kernel/scripts/<name> with the current interpreter."""
+    return subprocess.run(
+        [sys.executable, os.path.join(SCRIPTS_DIR, name), *args],
+        cwd=cwd,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
