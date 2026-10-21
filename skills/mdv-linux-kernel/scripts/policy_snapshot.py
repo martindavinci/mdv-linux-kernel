@@ -7,6 +7,8 @@ Usage: policy_snapshot.py [--repo DIR] [--upstream REF] [--max-age-days N] [--js
 Reports whether each policy document exists in the checkout, whether it was
 modified locally or changed upstream, and how old / behind the checkout is.
 Without --upstream the branch's configured upstream (@{upstream}) is used.
+Age is measured on the base (merge-base of HEAD and the upstream ref, or
+HEAD without one), so fresh local commits on an old tree still count as stale.
 Exit: 0 nothing to act on (info only), 1 warnings, 2 usage or git error.
 """
 from __future__ import annotations
@@ -48,22 +50,23 @@ def _resolve_upstream(repo: str, upstream: str | None) -> tuple[str | None, str 
     return upstream, None
 
 
+def _commit_date(repo: str, rev: str) -> tuple[str, int]:
+    out = mlk_common.git(["log", "-1", "--format=%cI %ct", rev, "--"], repo)
+    iso, ts = out.split()
+    return iso, int(ts)
+
+
 def snapshot(repo: str, upstream: str | None = None, max_age_days: int = 14,
              now: float | None = None) -> dict:
     now = time.time() if now is None else now
     findings: list[Finding] = []
     head = mlk_common.git(["rev-parse", "HEAD"], repo)
-    head_date = mlk_common.git(["log", "-1", "--format=%cI", "HEAD"], repo)
-    head_ts = int(mlk_common.git(["log", "-1", "--format=%ct", "HEAD"], repo))
-    age_days = int((now - head_ts) // 86400)
-    if age_days > max_age_days:
-        findings.append(Finding(
-            "STALE_CHECKOUT", "warn",
-            f"HEAD is {age_days} days old (limit {max_age_days}): fetch and rebase so the "
-            "process documents are current", detail=head_date))
+    head_date = _commit_date(repo, "HEAD")[0]
 
     ref, reason = _resolve_upstream(repo, upstream)
     upstream_info = None
+    upstream_age_days = None
+    base = head
     if ref is None:
         findings.append(Finding(
             "UPSTREAM_MISSING", "warn",
@@ -74,6 +77,25 @@ def snapshot(repo: str, upstream: str | None = None, max_age_days: int = 14,
         if behind > 0:
             findings.append(Finding(
                 "BEHIND_UPSTREAM", "warn", f"HEAD is {behind} commit(s) behind {ref}"))
+        res = mlk_common.run_git(["merge-base", "HEAD", ref], repo)
+        if res.returncode == 0 and res.stdout.strip():
+            base = res.stdout.strip()
+        up_date, up_ts = _commit_date(repo, ref)
+        upstream_age_days = int((now - up_ts) // 86400)
+        if upstream_age_days > max_age_days:
+            findings.append(Finding(
+                "STALE_UPSTREAM", "warn",
+                f"{ref} is {upstream_age_days} days old (limit {max_age_days}): fetch the "
+                "remote before trusting it", detail=up_date))
+
+    # Age of the tree the work is based on: local commits on top do not make it fresh.
+    base_date, base_ts = _commit_date(repo, base)
+    age_days = int((now - base_ts) // 86400)
+    if age_days > max_age_days:
+        findings.append(Finding(
+            "STALE_CHECKOUT", "warn",
+            f"the checkout's base {base[:12]} is {age_days} days old (limit {max_age_days}): "
+            "fetch and rebase so the process documents are current", detail=base_date))
 
     docs = []
     for path in POLICY_DOCS:
@@ -101,16 +123,18 @@ def snapshot(repo: str, upstream: str | None = None, max_age_days: int = 14,
                 f"{path} differs in {ref}; read the upstream version with "
                 f"'git show {ref}:{path}'", detail=path))
 
-    return {"head": head, "head_date": head_date, "age_days": age_days,
-            "upstream": upstream_info, "docs": docs,
+    return {"head": head, "head_date": head_date, "base": base, "base_date": base_date,
+            "age_days": age_days, "upstream": upstream_info,
+            "upstream_age_days": upstream_age_days, "docs": docs,
             "findings": [f.to_dict() for f in findings]}
 
 
 def human(payload: dict) -> str:
     up = payload["upstream"]
-    lines = [f"HEAD {payload['head'][:12]} ({payload['head_date']}, {payload['age_days']} days old)",
-             f"upstream: {up['ref']} (HEAD is {up['behind']} commit(s) behind)" if up
-             else "upstream: none"]
+    lines = [f"HEAD {payload['head'][:12]} ({payload['head_date']}), base "
+             f"{payload['base'][:12]} ({payload['base_date']}, {payload['age_days']} days old)",
+             f"upstream: {up['ref']} (HEAD is {up['behind']} commit(s) behind, "
+             f"{payload['upstream_age_days']} days old)" if up else "upstream: none"]
     for d in payload["docs"]:
         flags = [] if d["exists"] else ["missing"]
         flags += ["locally modified"] if d["locally_modified"] else []

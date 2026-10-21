@@ -148,8 +148,8 @@ Closes: https://syzkaller.appspot.com/bug?extid=0123456789abcdef0123
 
 ## 6. Cover letter
 
-Edit it without an editor, keeping the human's `Signed-off-by` line exactly
-as it is:
+With b4 0.17 or later (`b4 --version`), edit it without an editor,
+keeping the human's `Signed-off-by` line exactly as it is:
 
 ```
 b4 prep --show-cover > "$STATE/cover.txt"
@@ -157,6 +157,10 @@ b4 prep --show-cover > "$STATE/cover.txt"
 b4 prep --cover-from-file "$STATE/cover.txt"
 python3 <skill-dir>/scripts/signoff_guard.py check "$BASE..HEAD"
 ```
+
+With an older b4, write the draft to `$STATE/cover-draft.txt` and ask the
+human to run `b4 prep --edit-cover` and paste it in (keeping their
+`Signed-off-by`); then run the sign-off check. Do not script the editor.
 
 Lines starting with `#` are dropped by b4. Content: what the series does
 and why, how the patches relate, how it was tested (from the evidence

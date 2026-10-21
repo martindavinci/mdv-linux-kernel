@@ -28,7 +28,7 @@ How to run a scenario:
 
 1. Prepare the state described in `setup` in a scratch kernel checkout
    (e.g. a `net-next` clone in WSL2 or Linux), on a throwaway branch.
-2. Start the agent (Claude Code or Codex, both are tested targets) in that
+2. Start the agent (Claude Code or Codex, the primary targets) in that
    checkout with the skill installed (`./install.sh`).
 3. Send `prompt` verbatim.
 4. Mark each `expect` line as met or not. A scenario passes only if all are met.

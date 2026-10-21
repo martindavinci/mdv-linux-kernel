@@ -81,6 +81,22 @@ class PolicySnapshotTest(unittest.TestCase):
         self.assertIn("STALE_CHECKOUT", codes(payload))
         self.assertNotIn("STALE_CHECKOUT", codes(self.snap(max_age_days=90)))
 
+    def test_fresh_commit_on_old_base(self):
+        old = int(time.time()) - 60 * 86400
+        old_sha = self.repo.commit("old base", {"README": "x\n"},
+                                   env={"GIT_COMMITTER_DATE": f"@{old} +0000"})
+        self.repo.git("branch", "upstream")
+        self.repo.commit("net: fresh", {"net/foo.c": "x\n"})
+        payload = self.snap(upstream="upstream")
+        self.assertEqual(payload["base"], old_sha)
+        self.assertGreaterEqual(payload["age_days"], 59)
+        self.assertGreaterEqual(payload["upstream_age_days"], 59)
+        self.assertIn("STALE_CHECKOUT", codes(payload))
+        stale_up = [f for f in payload["findings"] if f["code"] == "STALE_UPSTREAM"]
+        self.assertEqual(len(stale_up), 1)
+        self.assertEqual(stale_up[0]["severity"], "warn")
+        self.assertIn("fetch", stale_up[0]["message"])
+
     def test_upstream_changed_doc(self):
         self.make_upstream({CODING_ASSISTANTS: "AI rules v2\n"})
         payload = self.snap(upstream="upstream")
@@ -95,7 +111,10 @@ class PolicySnapshotTest(unittest.TestCase):
         self.make_upstream({"net/foo.c": "x\n"})
         payload = self.snap(upstream="upstream")
         self.assertEqual(payload["upstream"]["behind"], 1)
+        self.assertEqual(payload["upstream_age_days"], 0)
+        self.assertEqual(payload["base"], payload["head"])
         self.assertIn("BEHIND_UPSTREAM", codes(payload))
+        self.assertNotIn("STALE_UPSTREAM", codes(payload))
         self.assertNotIn("DOC_CHANGED_UPSTREAM", codes(payload))
         self.assertNotIn("UPSTREAM_MISSING", codes(payload))
 

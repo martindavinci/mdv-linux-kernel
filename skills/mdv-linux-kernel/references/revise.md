@@ -17,10 +17,14 @@ get discouraged - or impatient" in `submitting-patches.rst`, and for netdev
   ...), the AI review on https://sashiko.dev/ and
   https://netdev-ai.bots.linux.dev/sashiko/, and the patchwork check
   results.
-- New trailers given on the list: `b4 trailers -u` applies them to the
-  matching commits (`-i` to review each one first). It matches by
-  patch-id, so run it before changing code; after changes see `--fuzzy`
-  in the b4 docs.
+- New trailers given on the list: the **human** runs `b4 trailers -u`,
+  which writes them into the matching commits. It rewrites commits and
+  takes trailers from replies as they are, which can include a
+  `Signed-off-by`, so it is not something you run. It matches by
+  patch-id, so it should run before code changes; after changes see
+  `--fuzzy` in the b4 docs. Afterwards, run `signoff_guard.py check`,
+  show the human any new `Signed-off-by`/`Co-developed-by`, and once they
+  confirm, take a fresh `signoff_guard.py snapshot "$BASE..HEAD"`.
 
 ## 2. Map every comment
 
@@ -71,7 +75,7 @@ send. Reviewers who commented should be in Cc of the next version
   for the old version usually does not survive a substantial change to
   that patch. Drop it, or keep it only for trivial changes, and say which
   in the changelog.
-- Any amend (and `b4 trailers -u`) makes evidence stale. Re-run
+- Any amend (and the human's `b4 trailers -u`) makes evidence stale. Re-run
   validation (`references/validate.md`) under the same check names, which
   replaces the old results, then the slop gate and the sign-off check. The
   human's existing `Signed-off-by` lines stay; new commits in the series

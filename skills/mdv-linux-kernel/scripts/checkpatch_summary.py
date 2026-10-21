@@ -9,7 +9,8 @@ Usage:
 
 A missing Signed-off-by is expected until the human signs off: it is not
 counted as an error and is reported as "pending_signoff" instead.
-Exit: 0 nothing to fix, 1 errors/warnings/checks, 2 usage or run error.
+Exit: 0 nothing to fix, 1 errors/warnings/checks, 2 usage error or checkpatch
+did not complete (crash, or fewer summaries than commits).
 """
 from __future__ import annotations
 
@@ -19,11 +20,13 @@ import re
 import shlex
 import subprocess
 import sys
+from typing import Callable
 
 import mlk_common
 
 ITEM_RE = re.compile(r"^(ERROR|WARNING|CHECK):(?:([A-Z][A-Z0-9_]*):)?\s*(.*)$")
 LOCATION_RE = re.compile(r"^#\d+: FILE: (.+?):?\s*$")
+TOTAL_RE = re.compile(r"^total: \d+ errors?, ", re.M)
 COUNT_KEYS = {"ERROR": "errors", "WARNING": "warnings", "CHECK": "checks"}
 
 
@@ -57,20 +60,31 @@ def parse_checkpatch(text: str) -> dict:
     return result
 
 
-def run_checkpatch(repo: str, rev_range: str, extra_args: str) -> str:
+def run_checkpatch(repo: str, rev_range: str, extra_args: str,
+                   runner: Callable[..., subprocess.CompletedProcess] | None = None) -> str:
+    """Run checkpatch.pl -g on the range; raise RuntimeError unless it completed.
+
+    checkpatch exits 0 (clean) or 1 (issues); anything else, or fewer
+    'total:' summary lines than commits in the range, means it stopped early.
+    """
     script = os.path.join(repo, "scripts", "checkpatch.pl")
     if not os.path.isfile(script):
         raise RuntimeError(f"{script} not found (is --repo a kernel checkout?)")
+    commits = len(mlk_common.commits_in_range(repo, rev_range))
     cmd = ["perl", "scripts/checkpatch.pl", "--strict", "--show-types", "-g", rev_range]
     cmd += shlex.split(extra_args or "")
     try:
-        res = subprocess.run(cmd, cwd=repo, capture_output=True, text=True,
-                             encoding="utf-8", errors="replace")
+        res = (runner or subprocess.run)(cmd, cwd=repo, capture_output=True, text=True,
+                                         encoding="utf-8", errors="replace")
     except OSError as exc:
         raise RuntimeError(f"cannot run perl: {exc}") from exc
     output = res.stdout + res.stderr
-    if res.returncode != 0 and not ITEM_RE.search(output) and "total:" not in output:
-        raise RuntimeError(f"checkpatch.pl failed (exit {res.returncode}):\n{output.strip()}")
+    totals = len(TOTAL_RE.findall(output))
+    if res.returncode < 0 or res.returncode > 1 or totals < commits:
+        raise RuntimeError(
+            f"checkpatch did not complete (exit {res.returncode}, {totals} of {commits} "
+            "commit summaries; do not pass --quiet): no summary produced.\n"
+            + "\n".join(output.strip().splitlines()[-20:]))
     return output
 
 

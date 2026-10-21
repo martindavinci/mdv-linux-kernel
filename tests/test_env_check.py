@@ -16,7 +16,10 @@ MEMINFO_32G = "MemTotal:       32768000 kB\nMemFree:        1000000 kB\n"
 CPUINFO = "processor\t: 0\nmodel name\t: x\n\nprocessor\t: 1\nmodel name\t: x\n"
 
 
-def run(missing=(), files=None, paths=("/dev/kvm",), disk=200.0, platform="linux"):
+HEADERS = ("/usr/include/gelf.h", "/usr/include/openssl/opensslv.h")
+
+
+def run(missing=(), files=None, paths=("/dev/kvm",) + HEADERS, disk=200.0, platform="linux"):
     files = {"/proc/version": NATIVE_VERSION, "/proc/meminfo": MEMINFO_32G,
              "/proc/cpuinfo": CPUINFO, **(files or {})}
     return env_check.check_environment(
@@ -77,7 +80,7 @@ class EnvCheckTest(unittest.TestCase):
         self.assertIsNone(res["tools"]["optional"]["smatch"])
 
     def test_no_kvm(self):
-        res = run(paths=())
+        res = run(paths=HEADERS)
         self.assertFalse(res["system"]["kvm"])
         self.assertEqual(codes(res), ["NO_KVM"])
         self.assertEqual(res["findings"][0]["severity"], "warn")
@@ -85,6 +88,21 @@ class EnvCheckTest(unittest.TestCase):
     def test_low_disk_and_mem(self):
         res = run(disk=20.0, files={"/proc/meminfo": "MemTotal:        4000000 kB\n"})
         self.assertEqual(codes(res), ["LOW_DISK", "LOW_MEM"])
+
+    def test_missing_library(self):
+        res = run(paths=("/dev/kvm",))
+        libs = [f for f in res["findings"] if f["code"] == "MISSING_LIBRARY"]
+        self.assertEqual(len(libs), 2)
+        self.assertEqual({f["severity"] for f in libs}, {"error"})
+        text = " ".join(f["message"] for f in libs)
+        for pkg in ("libelf-dev", "elfutils-libelf-devel", "libssl-dev", "openssl-devel"):
+            self.assertIn(pkg, text)
+        self.assertEqual(codes(res), ["MISSING_LIBRARY", "MISSING_LIBRARY"])
+
+    def test_libelf_alternative_header(self):
+        res = run(paths=("/dev/kvm", "/usr/include/libelf.h", "/usr/include/openssl/opensslv.h"))
+        self.assertEqual(res["findings"], [])
+        self.assertTrue(res["libraries"]["libelf"])
 
     def test_unreadable_proc_files(self):
         res = run(files={"/proc/meminfo": None, "/proc/version": None})

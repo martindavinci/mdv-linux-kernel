@@ -2,13 +2,17 @@
 """Tests for evidence.py."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
 import sys
+import time
 import unittest
+from unittest import mock
 
-from tests.gitfixture import GitRepo, make_tmpdir, run_script
+from tests.gitfixture import SCRIPTS_DIR, GitRepo, make_tmpdir, run_script
 
 import evidence
 import mlk_common
@@ -16,6 +20,12 @@ import mlk_common
 PASS_CMD = [sys.executable, "-c", "print('hello evidence')"]
 FAIL_CMD = [sys.executable, "-c", "import sys; sys.exit(3)"]
 PASS_WORD = re.compile(r"\bpass", re.I)
+
+
+@contextlib.contextmanager
+def quiet():
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        yield
 
 
 class EvidenceTest(unittest.TestCase):
@@ -57,12 +67,14 @@ class EvidenceTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("hello evidence", res.stdout)
         res = self.ev("run", "--name", "bad", "--category", "build", "--", *FAIL_CMD)
-        self.assertEqual(res.returncode, 3)
+        self.assertEqual(res.returncode, 1)
         code, payload = self.status()
         self.assertEqual(code, 1)
         self.assertEqual(self.statuses(), {"ok": "pass", "bad": "fail"})
         ok = [e for e in payload["entries"] if e["name"] == "ok"][0]
         self.assertEqual(ok["exit_code"], 0)
+        bad = [e for e in payload["entries"] if e["name"] == "bad"][0]
+        self.assertEqual(bad["exit_code"], 3)
         self.assertEqual(ok["category"], "test")
         for key in ("cmd", "started", "duration_s", "log", "state"):
             self.assertIn(key, ok)
@@ -136,6 +148,92 @@ class EvidenceTest(unittest.TestCase):
         res = self.ev("run", "--name", "x", "--category", "bogus", "--", *PASS_CMD)
         self.assertEqual(res.returncode, 2)
 
+    def test_unstartable_command_fails(self):
+        res = self.ev("run", "--name", "x", "--category", "test", "--", "no-such-command-mlk")
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual(self.store()["entries"][0]["exit_code"], 127)
+
+    def test_note_written_while_run_in_progress(self):
+        nested = [sys.executable, os.path.join(SCRIPTS_DIR, "evidence.py"),
+                  "note", "--key", "comprehension", "--value", "v"]
+        res = self.ev("run", "--name", "x", "--category", "test", "--", *nested)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        data = self.store()
+        self.assertEqual([n["value"] for n in data["notes"]["comprehension"]], ["v"])
+        self.assertEqual([e["name"] for e in data["entries"]], ["x"])
+
+    def test_stale_lock_is_removed(self):
+        lock = os.path.join(mlk_common.state_dir(self.repo.path), "evidence.lock")
+        with open(lock, "w") as f:
+            f.write("12345\n")
+        old = time.time() - 16 * 60
+        os.utime(lock, (old, old))
+        res = self.ev("note", "--key", "policy", "--value", "v")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertFalse(os.path.exists(lock))
+
+    def test_fresh_lock_times_out(self):
+        lock = os.path.join(mlk_common.state_dir(self.repo.path), "evidence.lock")
+        with open(lock, "w") as f:
+            f.write("12345\n")
+        with mock.patch.object(evidence, "LOCK_TIMEOUT_S", 0.3), quiet():
+            code = evidence.main(["note", "--repo", self.repo.path, "--key", "policy",
+                                  "--value", "v"])
+        self.assertEqual(code, 2)
+        self.assertTrue(os.path.exists(lock))
+        self.assertNotIn("policy", self.store()["notes"])
+
+    def test_untracked_file_makes_stale(self):
+        self.ev("run", "--name", "ok", "--category", "test", "--", *PASS_CMD)
+        with open(os.path.join(self.repo.path, "net", "new.c"), "w", newline="") as f:
+            f.write("int new;\n")
+        self.assertEqual(self.statuses(), {"ok": "stale"})
+
+    def test_input_change_makes_stale(self):
+        build = os.path.join(os.path.dirname(self.repo.path), "build")
+        os.makedirs(build)
+        config = os.path.join(build, ".config")
+        with open(config, "w", newline="") as f:
+            f.write("CONFIG_NET=y\n")
+        missing = os.path.join(build, "vmlinux")
+        res = self.ev("run", "--name", "ok", "--category", "build", "--input", config,
+                      "--input", missing, "--", *PASS_CMD)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        inputs = self.store()["entries"][0]["inputs"]
+        self.assertEqual(len(inputs), 2)
+        self.assertIsNone(inputs[os.path.abspath(missing)])
+        self.assertRegex(inputs[os.path.abspath(config)], r"^[0-9a-f]{64}$")
+        self.assertEqual(self.statuses(), {"ok": "pass"})
+        with open(config, "w", newline="") as f:
+            f.write("CONFIG_NET=n\n")
+        self.assertEqual(self.statuses(), {"ok": "stale"})
+        with open(config, "w", newline="") as f:
+            f.write("CONFIG_NET=y\n")
+        self.assertEqual(self.statuses(), {"ok": "pass"})
+        os.remove(config)
+        self.assertEqual(self.statuses(), {"ok": "stale"})
+
+    def test_toolchain_change_makes_stale(self):
+        def run_main(*args: str) -> tuple[int, str]:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = evidence.main([args[0], "--repo", self.repo.path, *args[1:]])
+            return code, out.getvalue()
+
+        gcc13 = {"gcc": "gcc 13.2.0", "clang": None}
+        gcc14 = {"gcc": "gcc 14.1.0", "clang": None}
+        with mock.patch.object(evidence, "toolchain_versions", return_value=gcc13):
+            code, _ = run_main("run", "--name", "ok", "--category", "build", "--", *PASS_CMD)
+            self.assertEqual(code, 0)
+            self.assertEqual(self.store()["entries"][0]["toolchain"], gcc13)
+            code, out = run_main("status", "--json")
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(out)["entries"][0]["effective_status"], "pass")
+        with mock.patch.object(evidence, "toolchain_versions", return_value=gcc14):
+            code, out = run_main("status", "--json")
+            self.assertEqual(code, 1)
+            self.assertEqual(json.loads(out)["entries"][0]["effective_status"], "stale")
+
 
 class EffectiveStatusTest(unittest.TestCase):
     STATE = {"head": "h1", "tree": "t1", "dirty": False}
@@ -153,6 +251,14 @@ class EffectiveStatusTest(unittest.TestCase):
                          "stale")
         self.assertEqual(evidence.effective_status(self.entry("skip", tree="t0"), self.STATE), "skip")
 
+    def test_effective_status_toolchain(self):
+        entry = dict(self.entry(), toolchain={"gcc": "gcc 13"})
+        self.assertEqual(evidence.effective_status(entry, self.STATE, {"gcc": "gcc 13"}), "pass")
+        self.assertEqual(evidence.effective_status(entry, self.STATE, {"gcc": "gcc 14"}), "stale")
+        self.assertEqual(evidence.effective_status(entry, self.STATE), "pass")
+        # Entries recorded before per-run toolchains existed are not invalidated.
+        self.assertEqual(evidence.effective_status(self.entry(), self.STATE, {"gcc": "x"}), "pass")
+
     def test_current_state(self):
         repo = GitRepo.create(make_tmpdir(self))
         repo.commit("init", {"a": "1\n"})
@@ -162,7 +268,8 @@ class EffectiveStatusTest(unittest.TestCase):
         self.assertFalse(st["dirty"])
         with open(os.path.join(repo.path, "untracked"), "w") as f:
             f.write("x")
-        self.assertFalse(evidence.current_state(repo.path)["dirty"])
+        self.assertTrue(evidence.current_state(repo.path)["dirty"])
+        os.remove(os.path.join(repo.path, "untracked"))
         with open(os.path.join(repo.path, "a"), "w") as f:
             f.write("2\n")
         self.assertTrue(evidence.current_state(repo.path)["dirty"])

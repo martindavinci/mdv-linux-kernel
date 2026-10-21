@@ -82,8 +82,11 @@ Write down the human's decision and the reason, then:
 - **Not a security bug** under `threat-model.rst` (e.g. it only needs
   privileges the threat model already trusts, such as root in the initial
   namespace; check the user-namespace notes there for `CAP_NET_ADMIN`):
-  resume the normal flow. Still keep the reproducer out of public text
-  until the human decides otherwise.
+  resume the normal flow. If the bug was found with AI tools, the
+  reproducer still stays out of public text (`security-bugs.rst`, "Responsible
+  use of AI to find bugs"); no confirmation changes that. Otherwise keep it
+  private until the classification is settled and the in-tree rules allow
+  publishing it.
 - **Security bug, to be handled publicly** (e.g. AI-found, per the current
   text): v1 stops at the explanation. Point the human to the procedure in
   `security-bugs.rst` ("Responsible use of AI to find bugs"); local

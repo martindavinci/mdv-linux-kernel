@@ -2,11 +2,16 @@
 """Tests for checkpatch_summary.py."""
 from __future__ import annotations
 
+import contextlib
+import functools
+import io
 import json
 import os
+import subprocess
 import unittest
+from unittest import mock
 
-from tests.gitfixture import make_tmpdir, run_script
+from tests.gitfixture import GitRepo, make_tmpdir, run_script
 
 import checkpatch_summary
 
@@ -69,6 +74,50 @@ class ParseTest(unittest.TestCase):
         res = checkpatch_summary.parse_checkpatch(FINDINGS.replace("\n", "\r\n"))
         self.assertEqual(res["warnings"], 1)
         self.assertEqual(res["items"][0]["location"], "net/foo.c:12")
+
+
+class RunCompletenessTest(unittest.TestCase):
+    def setUp(self):
+        self.repo = GitRepo.create(make_tmpdir(self))
+        self.base = self.repo.commit("init", {"scripts/checkpatch.pl": "# fake\n"})
+        self.repo.commit("net: one", {"net/a.c": "a\n"})
+        self.repo.commit("net: two", {"net/b.c": "b\n"})
+        self.range = f"{self.base}..HEAD"
+
+    def fake(self, returncode: int, stdout: str):
+        def runner(cmd, **kwargs):
+            self.cmd = cmd
+            return subprocess.CompletedProcess(cmd, returncode, stdout, "")
+        return runner
+
+    def run_cp(self, returncode: int, stdout: str) -> str:
+        return checkpatch_summary.run_checkpatch(self.repo.path, self.range, "",
+                                                 runner=self.fake(returncode, stdout))
+
+    def test_complete_run(self):
+        out = self.run_cp(1, FINDINGS + CLEAN)
+        self.assertEqual(checkpatch_summary.parse_checkpatch(out)["warnings"], 1)
+        self.assertEqual(self.cmd[:5], ["perl", "scripts/checkpatch.pl", "--strict",
+                                        "--show-types", "-g"])
+
+    def test_bad_return_code(self):
+        for code in (2, -9):
+            with self.assertRaisesRegex(RuntimeError, "did not complete"):
+                self.run_cp(code, FINDINGS + CLEAN)
+
+    def test_missing_totals(self):
+        with self.assertRaisesRegex(RuntimeError, "did not complete"):
+            self.run_cp(1, FINDINGS)
+
+    def test_cli_exit_2(self):
+        orig = checkpatch_summary.run_checkpatch
+        wrapped = functools.partial(orig, runner=self.fake(0, CLEAN))
+        err = io.StringIO()
+        with mock.patch.object(checkpatch_summary, "run_checkpatch", wrapped), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = checkpatch_summary.main(["--run", self.range, "--repo", self.repo.path])
+        self.assertEqual(code, 2)
+        self.assertIn("did not complete", err.getvalue())
 
 
 class CliTest(unittest.TestCase):

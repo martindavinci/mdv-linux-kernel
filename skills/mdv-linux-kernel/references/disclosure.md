@@ -76,7 +76,7 @@ link to it) rather than describing it.
 
 b4 places the cover text of a one-patch series below the `---` line of the
 patch, where reviewers see it and `git am` drops it. Put the same note
-there (via `b4 prep --edit-cover` or `--cover-from-file`). Without b4,
+there (see the cover letter section of `references/develop.md`). Without b4,
 write it by hand below `---`.
 
 ## Do not

@@ -84,8 +84,10 @@ Process rules change (mainline dropped the `Assisted-by:` requirement on
 2026-10-14, commit `1e035297ffda`). Read rules from the kernel checkout at
 use time; do not rely on memory or on the summaries in these references.
 
-1. At the start of every session inside a kernel checkout, run:
+1. At the start of every session inside a kernel checkout, refresh the
+   target tree (read-only; tell the human) and run the snapshot:
    ```
+   git fetch <remote>
    python3 <skill-dir>/scripts/policy_snapshot.py --upstream <remote>/main --json
    ```
    (`<remote>` is the target tree remote, e.g. `net-next` or `net`;
@@ -95,8 +97,11 @@ use time; do not rely on memory or on the summaries in these references.
      `git show <ref>:<path>`; that is the rule that applies to the submission.
    - `DOC_MODIFIED`: the local doc has edits; read `git show <ref>:<path>`
      (or `git show HEAD:<path>` if there is no upstream ref).
-   - `STALE_CHECKOUT` / `BEHIND_UPSTREAM`: tell the human; suggest
-     `git fetch <remote>` and rebasing before validation.
+   - `STALE_CHECKOUT` (the base of the work is old) / `BEHIND_UPSTREAM`:
+     tell the human; suggest rebasing onto the fresh upstream before
+     validation.
+   - `STALE_UPSTREAM`: the remote-tracking ref itself is old; the fetch
+     did not happen or failed. Fix that before trusting any doc.
    - `UPSTREAM_MISSING`: ask which remote is the target tree.
    - `DOC_MISSING` (info): older trees may lack the doc; say which rule you
      are taking from elsewhere and label it as such.
@@ -125,10 +130,11 @@ private channel; explain the rules that apply, read from the tree.
 - `<skill-dir>` is the directory containing this SKILL.md. Invoke scripts as
   `python3 <skill-dir>/scripts/<name>.py`, from the kernel checkout or with
   `--repo DIR`. Exit codes: `0` ok, `1` findings or failures, `2` usage or
-  git error. Use `--json` when you need to parse output.
+  git error (`evidence.py run` returns 1 when the command failed and keeps
+  the command's real exit code in the entry). Use `--json` when you need to parse output.
 - Script state lives in `<git-common-dir>/mdv-linux-kernel/`, never in the
   tracked tree. In shell snippets:
-  `STATE="$(git rev-parse --path-format=absolute --git-common-dir)/mdv-linux-kernel"`.
+  `STATE="$(cd "$(git rev-parse --git-common-dir)" && pwd)/mdv-linux-kernel"`.
 - The series is managed by `b4 prep` (default `commit` cover strategy: an
   empty cover-letter commit at the start of the series). In a prep branch:
   ```
@@ -186,12 +192,12 @@ subsystem's MAINTAINERS entry and `maintainer-*.rst` (if any). Say so.
 |---|---|
 | `scripts/env_check.py` | Environment and tool check (`--json`, `--path DIR`); phase 0. |
 | `scripts/policy_snapshot.py` | Freshness of process docs vs upstream (`--upstream REF`, `--max-age-days N`). |
-| `scripts/evidence.py` | Evidence store: `init --base`, `run --name --category -- CMD`, `skip`, `note --key`, `status`, `report`. |
+| `scripts/evidence.py` | Evidence store: `init --base`, `run --name --category [--input PATH]... -- CMD`, `skip`, `note --key`, `status`, `report`. |
 | `scripts/checkpatch_summary.py` | Runs/parses `checkpatch.pl --strict`; missing sign-off shown as pending, not error. |
 | `scripts/check_fixes.py` | Verifies `Fixes:` tags (format, SHA length, existence, title, ancestry, file overlap). |
 | `scripts/commit_msg_lint.py` | Heuristic commit-message lint (subject, body, LLM phrasing, Markdown). |
 | `scripts/build_warnings.py` | `diff --baseline LOG --patched LOG`: only diagnostics the patch introduced. |
-| `scripts/signoff_guard.py` | `snapshot` / `check`: flags `Signed-off-by` added after the agent started, and AI identities. |
+| `scripts/signoff_guard.py` | `snapshot` / `check`: flags `Signed-off-by` added after the agent started (series-wide and per patch), and AI identities. |
 
 Note keys for `evidence.py note`: `comprehension`, `external_review`,
 `policy`, `security_screen`, `disclosure`, `human_confirmations`. Notes
@@ -199,8 +205,10 @@ append; they never overwrite.
 
 Evidence facts to keep in mind: every `evidence.py` subcommand needs
 `init` first; an entry is valid only for the exact HEAD commit and tree it
-was recorded on, so any amend or rebase (cover-letter edits, trailers, the
-human's sign-off) makes it `stale`; re-running a check with the same
+was recorded on, with no uncommitted or untracked changes, the same
+toolchain, and unchanged `--input` files (pass the build's `.config` and,
+for runtime tests, the kernel image). Any amend or rebase (cover-letter
+edits, trailers, the human's sign-off) makes it `stale`; re-running a check with the same
 `--name` replaces the old result. Info-only findings exit 0.
 
 ## Self-check before every handover
@@ -210,7 +218,9 @@ phase:
 
 1. Run `python3 <skill-dir>/scripts/signoff_guard.py check "$BASE..HEAD"`.
    Any `SOB_ADDED` you cannot attribute to the human's own command, or any
-   `AI_IDENTITY`, must be fixed before going on.
+   `AI_IDENTITY`, must be fixed before going on. `SOB_UNVERIFIED` (a new or
+   renamed patch carries a sign-off) needs the human to confirm they added
+   it themselves.
 2. Re-read your own reply: every `b4 send`, `git send-email`, sign-off or
    server-auth command must be in a block labelled for the human to run,
    never something you ran or are about to run.

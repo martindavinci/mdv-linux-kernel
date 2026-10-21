@@ -17,6 +17,7 @@ python3 <skill-dir>/scripts/env_check.py --json --path <where the tree will live
 |---|---|
 | `NOT_LINUX` | Stop. Point the human to the README prerequisite: on Windows, WSL2 with the agent installed and logged in *inside* WSL2; on macOS, a Linux VM. Do not try to bootstrap from Windows. |
 | `MISSING_REQUIRED` | Offer the package commands below. Nothing builds without these. |
+| `MISSING_LIBRARY` | Development headers missing (libelf for objtool, OpenSSL for module signing): `allmodconfig` fails without them. Offer the package (Debian/Ubuntu `libelf-dev` / `libssl-dev`, Fedora `elfutils-libelf-devel` / `openssl-devel`). |
 | `MISSING_RECOMMENDED` | Offer to install; explain what each one is for (clang/lld: second compiler; sparse, spatch: static checks; b4: series workflow; vng, qemu: boot tests; pahole: BTF). |
 | `NO_KVM` | virtme-ng will be very slow or unusable. Runtime tests may have to be recorded as skipped. On WSL2, nested virtualization must be available; check `ls -l /dev/kvm` and the WSL documentation. |
 | `LOW_DISK` | allmodconfig/allyesconfig builds need tens of GB. Free space or limit validation and record the skips. |
@@ -61,7 +62,10 @@ pipx install b4
 pipx install virtme-ng
 ```
 then `b4 --version` and `vng --version`. `b4 prep --check` needs b4 0.14 or
-later; see the b4 docs for newer features. virtme-ng has its own runtime
+later. Editing the cover letter without an editor
+(`b4 prep --show-cover` / `--cover-from-file`) is new in b4 0.17; if PyPI
+still ships an older version, either install b4 from its git repository
+(see the b4 docs) or use the fallback in `references/develop.md`. virtme-ng has its own runtime
 dependencies (see its README).
 
 smatch is best effort: it is built from source (repo.or.cz/smatch.git);
@@ -86,9 +90,11 @@ git fetch net
 Both netdev trees use `main` as their branch (`net-next/main`, `net/main`).
 The clone is several GB; tell the human before starting.
 
-Read-only network commands (clone, fetch, `b4 mbox`, `b4 trailers -u`,
-lore and patchwork lookups) are fine after telling the human what you are
-fetching. Commands that authenticate or send are the human's (section 6).
+Read-only network commands (clone, fetch, `b4 mbox`, lore and patchwork
+lookups) are fine after telling the human what you are fetching. Commands
+that authenticate or send are the human's (section 6). `b4 trailers -u` is
+not read-only: it rewrites commits with trailers taken from replies, which
+can include a `Signed-off-by`; the human runs it (`references/revise.md`).
 
 Then run `policy_snapshot.py` (see SKILL.md, "Follow the tree").
 
@@ -116,7 +122,7 @@ series on a `b4/<name>` branch with a cover letter in an empty commit and
 tracks versions; `b4 prep --auto-to-cc` collects recipients from
 `get_maintainer.pl`; `b4 prep --check` runs checkpatch; `b4 send` formats,
 signs (patatt) and sends the series, then bumps the version; `b4 trailers -u`
-picks up `Reviewed-by`/`Acked-by` replies from lore. Docs:
+(run by the human) picks up `Reviewed-by`/`Acked-by` replies from lore. Docs:
 https://b4.docs.kernel.org (contributor section). Series creation is covered
 in `references/develop.md`.
 

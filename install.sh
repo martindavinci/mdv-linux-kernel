@@ -61,12 +61,54 @@ is_ours() {
 	fi
 }
 
-install_copy() {
-	local t="$1"
-	mkdir -p "$t"
-	cp -R "$SRC/." "$t/"
-	find "$t" -name __pycache__ -type d -prune -exec rm -rf {} +
-	printf 'source=%s\n' "$SRC" >"$t/$MARKER"
+copy_to() {
+	local d="$1"
+	mkdir -p "$d" &&
+		cp -R "$SRC/." "$d/" &&
+		# Test hook: simulate a copy failing half way.
+		[ -z "${MDV_INSTALL_FAIL_COPY:-}" ] &&
+		find "$d" -name __pycache__ -type d -prune -exec rm -rf {} + &&
+		printf 'source=%s\n' "$SRC" >"$d/$MARKER" &&
+		[ -f "$d/SKILL.md" ]
+}
+
+# Build the new install next to the target; print its path.
+stage() {
+	local s="$1.mdv-new.$$"
+	rm -rf "$s"
+	if [ "$mode" = "link" ]; then
+		if ln -s "$SRC" "$s" 2>/dev/null && [ -L "$s" ]; then
+			echo "$s"
+			return 0
+		fi
+		# Some environments (e.g. Git Bash without native symlinks) copy
+		# instead of linking; undo that and make a marked copy.
+		rm -rf "$s"
+		echo "symlinks unavailable here; copying instead" >&2
+	fi
+	if copy_to "$s"; then
+		echo "$s"
+		return 0
+	fi
+	rm -rf "$s"
+	return 1
+}
+
+# Replace $1 with staged $2, restoring the old install on failure.
+swap() {
+	local t="$1" s="$2" old="$1.mdv-old.$$"
+	if [ -e "$t" ] || [ -L "$t" ]; then
+		mv "$t" "$old" || return 1
+	fi
+	if mv "$s" "$t"; then
+		rm -rf "$old"
+		return 0
+	fi
+	rm -rf "$s"
+	if [ -e "$old" ] || [ -L "$old" ]; then
+		mv "$old" "$t"
+	fi
+	return 1
 }
 
 status=0
@@ -84,29 +126,28 @@ for t in "${targets[@]}"; do
 		continue
 	fi
 
-	if [ -e "$t" ] || [ -L "$t" ]; then
-		if is_ours "$t" || [ "$force" -eq 1 ]; then
-			rm -rf "$t"
-		else
-			echo "refusing to replace $t (exists, not ours); use --force" >&2
-			status=1
-			continue
-		fi
+	if { [ -e "$t" ] || [ -L "$t" ]; } && ! is_ours "$t" && [ "$force" -ne 1 ]; then
+		echo "refusing to replace $t (exists, not ours); use --force" >&2
+		status=1
+		continue
 	fi
 
 	mkdir -p "$(dirname "$t")"
-	if [ "$mode" = "link" ]; then
-		if ln -s "$SRC" "$t" 2>/dev/null && [ -L "$t" ]; then
-			echo "linked $t -> $SRC"
-			continue
-		fi
-		# Some environments (e.g. Git Bash without native symlinks) copy
-		# instead of linking; undo that and make a marked copy.
-		rm -rf "$t"
-		echo "symlinks unavailable here; copying instead" >&2
+	if ! staged="$(stage "$t")"; then
+		echo "failed to prepare $t; previous install (if any) left untouched" >&2
+		status=1
+		continue
 	fi
-	install_copy "$t"
-	echo "copied to $t"
+	if ! swap "$t" "$staged"; then
+		echo "failed to replace $t; previous install restored" >&2
+		status=1
+		continue
+	fi
+	if [ -L "$t" ]; then
+		echo "linked $t -> $SRC"
+	else
+		echo "copied to $t"
+	fi
 done
 
 exit "$status"

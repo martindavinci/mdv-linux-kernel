@@ -91,8 +91,8 @@ Options: `--agent claude|codex|all`, `--copy` (copy instead of symlink),
 
 | Agent | Installed at | Status |
 |---|---|---|
-| Claude Code | `~/.claude/skills/mdv-linux-kernel` | tested |
-| Codex | `~/.agents/skills/mdv-linux-kernel` | tested |
+| Claude Code | `~/.claude/skills/mdv-linux-kernel` | primary target |
+| Codex | `~/.agents/skills/mdv-linux-kernel` | primary target |
 | Gemini CLI, Copilot CLI | (Agent Skills format) | best effort |
 
 The skill is installed per user, never inside the kernel tree.
@@ -113,8 +113,9 @@ The skill talks to you in your language. Everything that goes upstream
 
 ## Helper scripts
 
-In `skills/mdv-linux-kernel/scripts/`, Python 3 standard library only. Each
-supports `--json`.
+In `skills/mdv-linux-kernel/scripts/`, Python 3 standard library only.
+Reporting commands support `--json` (`evidence.py status`, the checkers,
+`env_check.py`, `policy_snapshot.py`).
 
 | Script | Purpose |
 |---|---|
@@ -125,7 +126,7 @@ supports `--json`.
 | `commit_msg_lint.py` | changelog heuristics (subject prefix, imperative mood, wrapping, LLM-style prose) |
 | `check_fixes.py` | verifies `Fixes:` tags (format, SHA, title, ancestry) |
 | `build_warnings.py` | new warnings compared with a baseline build, ignoring line-number shifts |
-| `signoff_guard.py` | flags sign-offs added after the agent started and AI identities in trailers |
+| `signoff_guard.py` | flags sign-offs added after the agent started (series-wide and per patch) and AI identities in trailers |
 
 ## Development
 

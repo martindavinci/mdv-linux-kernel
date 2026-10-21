@@ -21,6 +21,13 @@ from mlk_common import Finding
 REQUIRED = ["git", "make", "gcc", "flex", "bison", "bc", "perl", "python3"]
 RECOMMENDED = ["clang", "ld.lld", "sparse", "spatch", "b4", "vng", "pahole", "qemu-system-x86_64"]
 OPTIONAL = ["smatch", "sashiko", "semcode-index"]
+# Development headers the kernel build needs: name -> (any of these headers, package hint).
+LIBRARIES = {
+    "libelf": (["/usr/include/gelf.h", "/usr/include/libelf.h"],
+               "libelf-dev on Debian/Ubuntu, elfutils-libelf-devel on Fedora"),
+    "openssl": (["/usr/include/openssl/opensslv.h"],
+                "libssl-dev on Debian/Ubuntu, openssl-devel on Fedora"),
+}
 MIN_DISK_GB = 50
 MIN_MEM_GB = 8
 
@@ -62,6 +69,8 @@ def check_environment(which: Callable[[str], str | None] = shutil.which,
     tools = {group: {name: which(name) for name in names}
              for group, names in (("required", REQUIRED), ("recommended", RECOMMENDED),
                                   ("optional", OPTIONAL))}
+    libraries = {name: any(exists(h) for h in headers)
+                 for name, (headers, _hint) in LIBRARIES.items()}
     if not is_linux:
         findings.append(Finding(
             "NOT_LINUX", "error",
@@ -69,7 +78,8 @@ def check_environment(which: Callable[[str], str | None] = shutil.which,
             "README WSL2 prerequisite (wsl --install -d Ubuntu) and run the agent inside WSL"))
         system = {"is_linux": False, "is_wsl": False, "kvm": False, "cpus": os.cpu_count(),
                   "mem_gb": None, "disk_free_gb": None}
-        return {"system": system, "tools": tools, "findings": [f.to_dict() for f in findings]}
+        return {"system": system, "tools": tools, "libraries": libraries,
+                "findings": [f.to_dict() for f in findings]}
 
     try:
         disk = disk_free_gb(path)
@@ -90,6 +100,13 @@ def check_environment(which: Callable[[str], str | None] = shutil.which,
         if missing:
             findings.append(Finding(code, severity, f"missing {group} tools ({why})",
                                     detail=", ".join(missing)))
+    for name, found in libraries.items():
+        if not found:
+            headers, hint = LIBRARIES[name]
+            findings.append(Finding(
+                "MISSING_LIBRARY", "error",
+                f"{name} development headers missing (needed to build the kernel): "
+                f"install {hint}", detail=" or ".join(headers)))
     if not system["kvm"]:
         findings.append(Finding(
             "NO_KVM", "warn",
@@ -101,7 +118,8 @@ def check_environment(which: Callable[[str], str | None] = shutil.which,
     if system["mem_gb"] is not None and system["mem_gb"] < MIN_MEM_GB:
         findings.append(Finding("LOW_MEM", "warn",
                                 f"{system['mem_gb']} GB RAM; at least {MIN_MEM_GB} GB is advised"))
-    return {"system": system, "tools": tools, "findings": [f.to_dict() for f in findings]}
+    return {"system": system, "tools": tools, "libraries": libraries,
+            "findings": [f.to_dict() for f in findings]}
 
 
 def human(payload: dict) -> str:
@@ -111,6 +129,8 @@ def human(payload: dict) -> str:
     for group, names in payload["tools"].items():
         found = [n for n, p in names.items() if p]
         lines.append(f"{group}: {len(found)}/{len(names)} found")
+    missing = [name for name, ok in payload["libraries"].items() if not ok]
+    lines.append(f"libraries: {'missing ' + ', '.join(missing) if missing else 'ok'}")
     return "\n".join(lines) + "\n" + mlk_common.format_findings(payload["findings"])
 
 

@@ -11,14 +11,20 @@ result `stale`. Nothing counts as tested unless `evidence.py status` shows
 
 ```
 E="python3 <skill-dir>/scripts/evidence.py"
-$E run  --name <name> --category <build|static|test|style|review|repro> -- <command...>
+$E run  --name <name> --category <build|static|test|style|review|repro> [--input FILE]... -- <command...>
 $E skip --name <name> --category <cat> --reason "<why it could not run>"
 $E status            # exit 1 if anything is fail or stale
 $E report > "$STATE/report.md"
 ```
 
 - `run` executes the command in the repo, saves the full log and records
-  exit code, duration and the tree state. Its exit code is the command's.
+  the command's exit code, duration, toolchain versions and the tree
+  state. It exits 0 if the command passed and 1 if it failed (the real
+  exit code is in the entry).
+- `--input FILE` (repeatable) records the hash of a file the result depends
+  on but git does not track: the build directory's `.config`, the kernel
+  image a runtime test booted. Pass them, otherwise a changed config or a
+  rebuilt kernel goes unnoticed.
 - All subcommands need `init` first (`references/develop.md`); without it
   they exit 2.
 - A check you cannot run is a `skip` with a reason, never omitted and never
@@ -27,8 +33,10 @@ $E report > "$STATE/report.md"
   recorded on. Any amend or rebase makes it `stale`, including
   message-only changes, `b4 prep --edit-cover` / `--cover-from-file` /
   `--auto-to-cc` (they rewrite the series' commits) and `b4 trailers -u`.
-  Uncommitted changes to tracked files also make results stale: commit
-  first.
+  Uncommitted changes and untracked files also make results stale (an
+  untracked new header can make a build pass that the posted patch would
+  fail): commit or remove them first. A different toolchain or a changed
+  `--input` file makes results stale too.
 - Re-running a check with the same `--name` replaces the old result;
   `status` and `report` show only the latest entry per name.
 - So: finish commit messages, cover letter and recipients (the slop gate,
@@ -44,7 +52,7 @@ $E report > "$STATE/report.md"
 
 Set up once per session (see SKILL.md, Conventions):
 ```
-STATE="$(git rev-parse --path-format=absolute --git-common-dir)/mdv-linux-kernel"
+STATE="$(cd "$(git rev-parse --git-common-dir)" && pwd)/mdv-linux-kernel"
 BASE=$(b4 prep --show-info base-commit)
 RANGE=$(b4 prep --show-info series-range)
 ```
@@ -90,13 +98,22 @@ and a config that enables the touched code (allmodconfig is the simplest):
 ```
 KB=$HOME/kbuild/allmod
 make O=$KB allmodconfig
-OBJS=$(git diff --name-only "$BASE" HEAD -- '*.c' | sed 's/\.c$/.o/')
-$E run --name build-objs --category build -- \
+./scripts/config --file $KB/.config -d WERROR   # allmodconfig enables -Werror
+make O=$KB olddefconfig
+# kernel .c files the series adds or modifies (not deleted, not tools/ or scripts/)
+OBJS=$(git diff --name-only --diff-filter=d "$BASE" HEAD -- '*.c' ':!tools/' ':!scripts/' | sed 's/\.c$/.o/')
+echo "$OBJS"
+$E run --name build-objs --category build --input "$KB/.config" -- \
   git rebase --exec "make O=$KB W=1 C=1 -j$(nproc) $OBJS" "$(b4 prep --show-info start-commit)"
 ```
 
-With no edits, the rebase keeps every commit as it is; check that
-`git rev-parse HEAD` is unchanged afterwards. If a file only exists after a
+If `OBJS` is empty (the series touches only headers, Kconfig, selftests or
+scripts), do not run this: `make` with no targets builds the whole tree for
+every patch. Rely on the full builds below, or build the directories whose
+headers changed. With no edits, the rebase keeps every commit as it is;
+check that `git rev-parse HEAD` is unchanged afterwards. If a build fails
+the rebase stops half way: run `git rebase --abort` to return to the
+series tip before doing anything else. If a file only exists after a
 later patch, build the objects per patch instead. `C=1` runs sparse on
 recompiled files; if an object was already up to date use `C=2`. If the
 source tree has an in-tree `.config` or build products, `O=` builds fail
@@ -122,7 +139,7 @@ make O=$KB allmodconfig
 ./scripts/config --file $KB/.config -d WERROR
 make O=$KB W=1 -j$(nproc) 2>&1 | tee "$STATE/baseline-allmodconfig-$(git rev-parse --short=12 HEAD).log"
 git switch -                      # back to the series branch
-$E run --name allmodconfig-W1 --category build -- make O=$KB W=1 -j$(nproc)
+$E run --name allmodconfig-W1 --category build --input "$KB/.config" -- make O=$KB W=1 -j$(nproc)
 # the "log" field of the allmodconfig-W1 item in "entries" of: $E status --json
 $E run --name new-warnings-allmodconfig --category build -- \
   python3 <skill-dir>/scripts/build_warnings.py diff \
@@ -133,6 +150,10 @@ Repeat with `allyesconfig` in its own build
 directory. The patched build is incremental, so its log only contains
 recompiled files; `build_warnings.py` compares diagnostics by file,
 message and flag (not line numbers) and reports only what the patch added.
+It also understands modpost (e.g. a missing `MODULE_DESCRIPTION()`),
+objtool, linker and Kconfig warnings, and, like the netdev CI, compares the
+total count of warning/error lines (`baseline_count`, `patched_count`): a
+higher count fails even if no single line could be attributed.
 A baseline log stays usable as long as `BASE` does not change.
 
 ### smatch and Coccinelle
@@ -154,7 +175,8 @@ git worktree add --detach "$WT" HEAD          # later: git -C "$WT" checkout --d
 cd "$WT" && vng --build --config tools/testing/selftests/net/config && make headers
 make -C tools/testing/selftests TARGETS=net
 cd -
-$E run --name selftest-<test> --category test -- \
+$E run --name selftest-<test> --category test \
+  --input "$WT/.config" --input "$WT/arch/x86/boot/bzImage" -- \
   vng --run "$WT" --user root --cpus 4 -- \
   make -C "$WT/tools/testing/selftests" TARGETS=net TEST_PROGS=<test>.sh TEST_GEN_PROGS="" run_tests
 ```

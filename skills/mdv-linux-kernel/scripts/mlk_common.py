@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from typing import Callable
 
 TRAILER_RE = re.compile(r"^([A-Za-z-]+):\s*(.+?)\s*$")
+B4_TRACKING = "--- b4-submit-tracking ---"
 
 # Exit codes shared by every script.
 EXIT_OK = 0
@@ -74,13 +75,16 @@ def subject(repo: str, sha: str) -> str:
 def split_message(message: str) -> tuple[str, list[str], list[str]]:
     """Return (subject, body lines, trailer lines) of a commit message.
 
-    Anything after a line that is exactly '---' is ignored. Trailer lines are
-    the trailing paragraph(s) made only of 'Key: value' lines (the subject
-    paragraph never counts).
+    Anything from a line that is exactly '---' (patch notes) or that starts
+    with '--- b4-submit-tracking ---' (b4 cover-letter commit metadata) is
+    ignored. Trailer lines are the trailing paragraph(s) made only of
+    'Key: value' lines (the subject paragraph never counts).
     """
     lines = [line.rstrip() for line in message.replace("\r\n", "\n").split("\n")]
-    if "---" in lines:
-        lines = lines[:lines.index("---")]
+    for i, line in enumerate(lines):
+        if line == "---" or line.startswith(B4_TRACKING):
+            lines = lines[:i]
+            break
     while lines and not lines[-1]:
         lines.pop()
     paragraphs: list[list[str]] = []

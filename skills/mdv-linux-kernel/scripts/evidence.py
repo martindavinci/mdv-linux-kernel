@@ -5,20 +5,24 @@
 Store: <git-common-dir>/mdv-linux-kernel/evidence.json, logs in .../logs/.
 
   evidence.py init --base <rev> [--repo DIR] [--force]
-  evidence.py run --name NAME --category CAT [--repo DIR] -- CMD...
+  evidence.py run --name NAME --category CAT [--input PATH]... [--repo DIR] -- CMD...
   evidence.py skip --name NAME --category CAT --reason TEXT [--repo DIR]
   evidence.py note --key KEY --value TEXT [--repo DIR]
   evidence.py status [--json] [--repo DIR]
   evidence.py report [--repo DIR]
 
-An entry is only valid for the exact commit and tree it ran on: once HEAD,
-the tree or the working copy changes, it is reported as "stale".
-Exit: 0 ok, 1 failure/stale/refused (run: the command's own exit code),
-2 usage or git error.
+An entry is only valid for the exact state it ran on: once HEAD, the tree,
+the working copy (including untracked files), an --input file or the
+toolchain changes, it is reported as "stale".
+Writes are serialised with <state dir>/evidence.lock.
+Exit: 0 ok, 1 failure/stale/refused (run: 1 if the command failed; its real
+exit code is stored in the entry), 2 usage or git error.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
 import json
 import os
 import re
@@ -26,6 +30,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from typing import Callable
@@ -35,6 +40,9 @@ import mlk_common
 CATEGORIES = ["build", "static", "test", "style", "review", "repro"]
 TOOLS = ["gcc", "clang", "make", "sparse", "b4"]
 STORE_NAME = "evidence.json"
+LOCK_NAME = "evidence.lock"
+LOCK_TIMEOUT_S = 60.0
+LOCK_STALE_S = 15 * 60
 
 
 def now_iso() -> str:
@@ -42,7 +50,8 @@ def now_iso() -> str:
 
 
 def current_state(repo: str) -> dict:
-    status = mlk_common.git(["status", "--porcelain", "--untracked-files=no"], repo)
+    # Untracked files count: a new source file can change what a build or test sees.
+    status = mlk_common.git(["status", "--porcelain"], repo)
     return {
         "head": mlk_common.git(["rev-parse", "HEAD"], repo),
         "tree": mlk_common.git(["rev-parse", "HEAD^{tree}"], repo),
@@ -50,16 +59,36 @@ def current_state(repo: str) -> dict:
     }
 
 
-def effective_status(entry: dict, state: dict) -> str:
+def file_sha256(path: str) -> str | None:
+    if not os.path.isfile(path):
+        return None
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def effective_status(entry: dict, state: dict, toolchain: dict | None = None) -> str:
+    """The recorded status if nothing it depends on changed, else "stale".
+
+    Depends on: HEAD and its tree (an amended message also invalidates, since
+    checkpatch and commit-message checks read it), a clean working copy then
+    and now, every --input file hash, and the toolchain (when given and the
+    entry recorded one).
+    """
     if entry["status"] == "skip":
         return "skip"
     recorded = entry.get("state") or {}
-    # Stricter than tree-only: an amended commit message also invalidates
-    # evidence (checkpatch and commit-message checks read it).
-    if (recorded.get("tree") == state["tree"] and recorded.get("head") == state["head"]
-            and not state["dirty"] and not recorded.get("dirty")):
-        return entry["status"]
-    return "stale"
+    if (recorded.get("tree") != state["tree"] or recorded.get("head") != state["head"]
+            or state["dirty"] or recorded.get("dirty")):
+        return "stale"
+    for path, digest in (entry.get("inputs") or {}).items():
+        if file_sha256(path) != digest:
+            return "stale"
+    if toolchain is not None and "toolchain" in entry and entry["toolchain"] != toolchain:
+        return "stale"
+    return entry["status"]
 
 
 def toolchain_versions(which: Callable[[str], str | None] = shutil.which) -> dict:
@@ -79,11 +108,16 @@ def toolchain_versions(which: Callable[[str], str | None] = shutil.which) -> dic
     return versions
 
 
+class UsageError(Exception):
+    pass
+
+
 class Store:
     def __init__(self, repo: str):
         self.repo = repo
         self.dir = mlk_common.state_dir(repo)
         self.path = os.path.join(self.dir, STORE_NAME)
+        self.lock_path = os.path.join(self.dir, LOCK_NAME)
 
     def exists(self) -> bool:
         return os.path.exists(self.path)
@@ -95,11 +129,53 @@ class Store:
             return json.load(f)
 
     def save(self, data: dict) -> None:
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(data, f, indent=2)
-            f.write("\n")
-        os.replace(tmp, self.path)
+        fd, tmp = tempfile.mkstemp(prefix="evidence-", suffix=".tmp", dir=self.dir)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+                json.dump(data, f, indent=2)
+                f.write("\n")
+            os.replace(tmp, self.path)
+        except BaseException:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
+
+    @contextlib.contextmanager
+    def locked(self):
+        """Exclusive lock for a read-modify-write of the store."""
+        deadline = time.monotonic() + LOCK_TIMEOUT_S
+        while True:
+            try:
+                fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                break
+            except (FileExistsError, PermissionError):
+                try:
+                    if time.time() - os.path.getmtime(self.lock_path) > LOCK_STALE_S:
+                        os.remove(self.lock_path)  # left behind by a killed process
+                        continue
+                except OSError:
+                    continue  # the lock disappeared meanwhile: retry at once
+                if time.monotonic() >= deadline:
+                    raise UsageError(f"evidence store is locked ({self.lock_path}); if no other "
+                                     "evidence.py is running, remove that file")
+                time.sleep(0.1)
+        try:
+            os.write(fd, f"{os.getpid()}\n".encode())
+            os.close(fd)
+            yield
+        finally:
+            try:
+                os.remove(self.lock_path)
+            except OSError:
+                pass
+
+    def update(self, change: Callable[[dict], None]) -> None:
+        with self.locked():
+            data = self.load()
+            change(data)
+            self.save(data)
 
     def new_log_path(self, name: str) -> str:
         logs = os.path.join(self.dir, "logs")
@@ -114,10 +190,6 @@ class Store:
         return path
 
 
-class UsageError(Exception):
-    pass
-
-
 def latest_entries(entries: list[dict]) -> list[dict]:
     """Keep the most recent entry per name (a re-run supersedes older results)."""
     latest: dict[str, dict] = {}
@@ -128,12 +200,15 @@ def latest_entries(entries: list[dict]) -> list[dict]:
 
 
 def cmd_init(store: Store, args) -> int:
-    if store.exists() and not args.force:
-        print(f"refusing to overwrite {store.path} (use --force to start over)", file=sys.stderr)
-        return mlk_common.EXIT_FINDINGS
     base = mlk_common.git(["rev-parse", "--verify", f"{args.base}^{{commit}}"], store.repo)
-    store.save({"created": now_iso(), "base": base, "toolchain": toolchain_versions(),
-                "entries": [], "notes": {}})
+    toolchain = toolchain_versions()
+    with store.locked():
+        if store.exists() and not args.force:
+            print(f"refusing to overwrite {store.path} (use --force to start over)",
+                  file=sys.stderr)
+            return mlk_common.EXIT_FINDINGS
+        store.save({"created": now_iso(), "base": base, "toolchain": toolchain,
+                    "entries": [], "notes": {}})
     print(f"evidence store initialised at {store.path} (base {base[:12]})")
     return mlk_common.EXIT_OK
 
@@ -141,8 +216,13 @@ def cmd_init(store: Store, args) -> int:
 def cmd_run(store: Store, args) -> int:
     if not args.cmd:
         raise UsageError("missing command: evidence.py run --name N --category C -- CMD...")
-    data = store.load()
+    store.load()  # fail early if the store was never initialised
     state = current_state(store.repo)
+    inputs = {}
+    for path in args.input:
+        full = os.path.abspath(os.path.join(store.repo, path))
+        inputs[full] = file_sha256(full)
+    toolchain = toolchain_versions()
     log_path = store.new_log_path(args.name)
     started, t0 = now_iso(), time.monotonic()
     with open(log_path, "wb") as log:
@@ -163,34 +243,30 @@ def cmd_run(store: Store, args) -> int:
                     out.write(chunk)
                     out.flush()
             exit_code = proc.wait()
-    data["entries"].append({
+    entry = {
         "name": args.name, "category": args.category, "cmd": shlex.join(args.cmd),
         "exit_code": exit_code, "status": "pass" if exit_code == 0 else "fail",
         "started": started, "duration_s": round(time.monotonic() - t0, 3),
-        "log": log_path, "state": state,
-    })
-    store.save(data)
+        "log": log_path, "state": state, "inputs": inputs, "toolchain": toolchain,
+    }
+    # Reload after the command: other evidence.py calls may have written meanwhile.
+    store.update(lambda data: data["entries"].append(entry))
     print(f"[evidence] {args.name}: {'pass' if exit_code == 0 else 'FAIL'} "
           f"(exit {exit_code}), log {log_path}", file=sys.stderr)
-    return exit_code
+    return mlk_common.EXIT_OK if exit_code == 0 else mlk_common.EXIT_FINDINGS
 
 
 def cmd_skip(store: Store, args) -> int:
-    data = store.load()
-    data["entries"].append({
-        "name": args.name, "category": args.category, "status": "skip", "reason": args.reason,
-        "started": now_iso(), "state": current_state(store.repo),
-    })
-    store.save(data)
+    entry = {"name": args.name, "category": args.category, "status": "skip",
+             "reason": args.reason, "started": now_iso(), "state": current_state(store.repo)}
+    store.update(lambda data: data["entries"].append(entry))
     print(f"[evidence] {args.name}: skipped ({args.reason})")
     return mlk_common.EXIT_OK
 
 
 def cmd_note(store: Store, args) -> int:
-    data = store.load()
-    data.setdefault("notes", {}).setdefault(args.key, []).append(
-        {"value": args.value, "time": now_iso()})
-    store.save(data)
+    note = {"value": args.value, "time": now_iso()}
+    store.update(lambda data: data.setdefault("notes", {}).setdefault(args.key, []).append(note))
     print(f"[evidence] note '{args.key}' recorded")
     return mlk_common.EXIT_OK
 
@@ -198,9 +274,10 @@ def cmd_note(store: Store, args) -> int:
 def evaluated(store: Store) -> tuple[dict, dict, list[dict]]:
     data = store.load()
     state = current_state(store.repo)
+    toolchain = toolchain_versions()
     entries = []
     for entry in latest_entries(data["entries"]):
-        entries.append(dict(entry, effective_status=effective_status(entry, state)))
+        entries.append(dict(entry, effective_status=effective_status(entry, state, toolchain)))
     return data, state, entries
 
 
@@ -290,6 +367,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--category", required=True, choices=CATEGORIES)
         if name == "skip":
             p.add_argument("--reason", required=True)
+        else:
+            p.add_argument("--input", action="append", default=[], metavar="PATH",
+                           help="file the result depends on (e.g. build .config, kernel "
+                                "image); repeatable; a changed hash makes the entry stale")
     p = add("note", cmd_note, "append a note")
     p.add_argument("--key", required=True)
     p.add_argument("--value", required=True)

@@ -12,12 +12,33 @@ import mlk_common
 import signoff_guard
 
 HUMAN_SOB = "Signed-off-by: Test Human <human@example.org>"
+B4_COVER = """\
+net: foo: fix bar handling
+
+This series fixes the bar handling in foo.
+
+Signed-off-by: Claude <noreply@anthropic.com>
+
+--- b4-submit-tracking ---
+# This section is used internally by b4 prep for tracking purposes.
+{
+  "series": {
+    "revision": 1,
+    "change-id": "20261021-foo-bar-0123456789ab",
+    "prefixes": [],
+    "base-branch": "main"
+  }
+}
+"""
 
 
 class SobValuesTest(unittest.TestCase):
     def test_sob_values_normalised(self):
         msg = "net: x\r\n\r\nBody.\r\n\r\nSigned-off-by:   Test   Human <h@e.org>  \r\nAcked-by: X <x@y>\r\n"
         self.assertEqual(signoff_guard.sob_values(msg), ["Test Human <h@e.org>"])
+
+    def test_b4_cover_letter(self):
+        self.assertEqual(signoff_guard.sob_values(B4_COVER), ["Claude <noreply@anthropic.com>"])
 
     def test_looks_like_ai_identity(self):
         for value in ("Claude <noreply@anthropic.com>", "Codex <x@openai.com>",
@@ -110,6 +131,55 @@ class GuardTest(unittest.TestCase):
         self.repo.commit("net: foo: more\r\n\r\nBody.\r\n\r\n"
                          "Signed-off-by: Claude <noreply@anthropic.com> \r\n")
         self.assertEqual(self.check(), (1, ["AI_IDENTITY", "SOB_ADDED"]))
+
+    def test_b4_cover_commit_ai_identity(self):
+        self.repo.commit(B4_COVER)
+        self.snapshot()
+        res = self.guard("check", f"{self.base}..HEAD", "--json")
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual([f["code"] for f in json.loads(res.stdout)["findings"]], ["AI_IDENTITY"])
+
+    def test_snapshot_per_commit_records(self):
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
+        self.repo.commit("net: foo: more\n\nBody.\n")
+        self.snapshot()
+        path = os.path.join(mlk_common.state_dir(self.repo.path), "signoff-snapshot.json")
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(data["commits"], [
+            {"subject": "net: foo: fix", "sob": ["Test Human <human@example.org>"]},
+            {"subject": "net: foo: more", "sob": []},
+        ])
+
+    def test_sob_moved_to_new_patch_flagged(self):
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
+        self.snapshot()
+        # The agent rewrites: patch A loses the SoB, a new patch B carries it.
+        self.repo.git("commit", "-q", "--amend", "--allow-empty", "-m", "net: foo: fix\n\nBody.\n")
+        self.repo.commit(f"net: foo: new\n\nBody.\n\n{HUMAN_SOB}\n")
+        res = self.guard("check", f"{self.base}..HEAD", "--json")
+        findings = json.loads(res.stdout)["findings"]
+        self.assertEqual([(f["code"], f["severity"]) for f in findings],
+                         [("SOB_UNVERIFIED", "warn")])
+        self.assertEqual(res.returncode, 1)
+
+    def test_sob_moved_to_existing_patch_flagged(self):
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
+        self.repo.commit("net: foo: more\n\nBody.\n")
+        self.snapshot()
+        self.repo.git("reset", "-q", "--hard", self.base)
+        self.repo.commit("net: foo: fix\n\nBody.\n")
+        self.repo.commit(f"net: foo: more\n\nBody.\n\n{HUMAN_SOB}\n")
+        self.assertEqual(self.check(), (1, ["SOB_ADDED"]))
+
+    def test_old_snapshot_without_commits(self):
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
+        path = os.path.join(mlk_common.state_dir(self.repo.path), "signoff-snapshot.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"created": "2026-10-01T00:00:00Z", "range": "x",
+                       "sob": ["Test Human <human@example.org>"]}, f)
+        self.repo.commit(f"net: foo: new\n\nBody.\n\n{HUMAN_SOB}\n")
+        self.assertEqual(self.check(), (1, ["SOB_ADDED"]))
 
     def test_bad_range(self):
         self.assertEqual(self.guard("check", "nosuch..HEAD").returncode, 2)

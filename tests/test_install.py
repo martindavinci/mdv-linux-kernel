@@ -81,6 +81,28 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertTrue(installed(target(self.home, "codex")))
 
+    def test_copy_upgrade_leaves_no_staging_dirs(self):
+        self.assertEqual(self.run_install("--agent", "claude", "--copy").returncode, 0)
+        res = self.run_install("--agent", "claude", "--copy")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        parent = os.path.dirname(target(self.home, "claude"))
+        self.assertEqual(sorted(os.listdir(parent)), ["mdv-linux-kernel"])
+        self.assertTrue(installed(target(self.home, "claude")))
+
+    def test_failed_copy_keeps_previous_install(self):
+        self.assertEqual(self.run_install("--agent", "claude", "--copy").returncode, 0)
+        path = target(self.home, "claude")
+        res = subprocess.run(
+            [BASH, INSTALL, "--home", self.home.replace(os.sep, "/"),
+             "--agent", "claude", "--copy"],
+            capture_output=True, text=True,
+            env={**os.environ, "MDV_INSTALL_FAIL_COPY": "1"},
+        )
+        self.assertNotEqual(res.returncode, 0)
+        self.assertTrue(installed(path))
+        parent = os.path.dirname(path)
+        self.assertEqual(sorted(os.listdir(parent)), ["mdv-linux-kernel"])
+
     def test_uninstall_only_own(self):
         self.assertEqual(self.run_install("--agent", "claude").returncode, 0)
         foreign = target(self.home, "codex")

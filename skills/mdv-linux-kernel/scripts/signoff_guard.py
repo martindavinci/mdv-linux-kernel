@@ -6,8 +6,15 @@
   signoff_guard.py check <rev-range> [--repo DIR] [--json]
 
 'snapshot' records the Signed-off-by values present before the agent starts
-editing; 'check' flags any SoB beyond that set (only the human may add one)
-and any SoB / Co-developed-by that looks like an AI identity.
+editing, for the series and per patch (by subject). 'check' flags:
+  SOB_ADDED (error)      more SoB lines than the snapshot, or a SoB on a
+                         snapshot patch that it did not have (only the human
+                         may add one);
+  SOB_UNVERIFIED (warn)  a patch not in the snapshot carries a SoB: the human
+                         must confirm they added it;
+  AI_IDENTITY (error)    a SoB / Co-developed-by that looks like an AI;
+  NO_SNAPSHOT (warn).
+Snapshots from older versions (series list only) get the series check only.
 Exit: 0 no findings, 1 findings, 2 usage or git error.
 """
 from __future__ import annotations
@@ -55,28 +62,51 @@ def snapshot_path(repo: str) -> str:
 
 def take_snapshot(repo: str, rev_range: str) -> dict:
     sobs: list[str] = []
+    commits = []
     for sha in mlk_common.commits_in_range(repo, rev_range):
-        sobs.extend(sob_values(mlk_common.commit_message(repo, sha)))
+        message = mlk_common.commit_message(repo, sha)
+        values = sob_values(message)
+        sobs.extend(values)
+        commits.append({"subject": mlk_common.split_message(message)[0], "sob": values})
     data = {"created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "range": rev_range, "sob": sorted(sobs)}
+            "range": rev_range, "sob": sorted(sobs), "commits": commits}
     with open(snapshot_path(repo), "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
     return data
 
 
+def load_snapshot(repo: str) -> dict | None:
+    path = snapshot_path(repo)
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _sob_added(sha: str, value: str, why: str) -> Finding:
+    return Finding("SOB_ADDED", "error",
+                   f"Signed-off-by {why}; only the human may add it "
+                   "(git rebase --signoff, run by the human)",
+                   commit=sha, detail=f"Signed-off-by: {value}")
+
+
 def check(repo: str, rev_range: str) -> list[Finding]:
     findings: list[Finding] = []
-    path = snapshot_path(repo)
+    snap = load_snapshot(repo)
     allowed: Counter | None = None
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            allowed = Counter(json.load(f).get("sob", []))
-    else:
+    by_subject: dict[str, list[dict]] | None = None
+    if snap is None:
         findings.append(Finding(
             "NO_SNAPSHOT", "warn",
             "no sign-off snapshot: run 'signoff_guard.py snapshot <base>..HEAD' before "
             "editing commits, so added Signed-off-by lines can be detected"))
+    else:
+        allowed = Counter(snap.get("sob", []))
+        if "commits" in snap:  # older snapshots only have the series multiset
+            by_subject = {}
+            for record in snap["commits"]:
+                by_subject.setdefault(record["subject"], []).append(record)
     for sha in mlk_common.commits_in_range(repo, rev_range):
         message = mlk_common.commit_message(repo, sha)
         for key, value in mlk_common.trailers(message):
@@ -87,15 +117,29 @@ def check(repo: str, rev_range: str) -> list[Finding]:
                     commit=sha, detail=f"{key}: {value}"))
         if allowed is None:
             continue
-        for value in sob_values(message):
+        values = sob_values(message)
+        flagged: Counter = Counter()
+        # Series-wide: more SoB lines than the snapshot had.
+        for value in values:
             if allowed[value] > 0:
                 allowed[value] -= 1
             else:
-                findings.append(Finding(
-                    "SOB_ADDED", "error",
-                    "Signed-off-by added after the agent started; only the human may add it "
-                    "(git rebase --signoff, run by the human)",
-                    commit=sha, detail=f"Signed-off-by: {value}"))
+                flagged[value] += 1
+                findings.append(_sob_added(sha, value, "added after the agent started"))
+        if by_subject is None:
+            continue
+        # Per patch: a SoB moved between patches keeps the series count unchanged.
+        records = by_subject.get(mlk_common.split_message(message)[0])
+        remaining = Counter(values) - flagged
+        if records:
+            record = records.pop(0)
+            for value in (remaining - Counter(record["sob"])).elements():
+                findings.append(_sob_added(sha, value, "not present on this patch in the snapshot"))
+        elif remaining:
+            findings.append(Finding(
+                "SOB_UNVERIFIED", "warn",
+                "commit not in snapshot carries Signed-off-by; human must confirm they added it",
+                commit=sha, detail="; ".join(f"Signed-off-by: {v}" for v in remaining.elements())))
     return findings
 
 

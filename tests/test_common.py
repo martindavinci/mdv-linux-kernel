@@ -72,6 +72,14 @@ class TrailersTest(unittest.TestCase):
         msg = "net: x\n\nNote: this is prose\nand continues here.\n\nSigned-off-by: A <a@b>\n"
         self.assertEqual(mlk_common.trailers(msg), [("Signed-off-by", "A <a@b>")])
 
+    def test_truncated_at_separator_and_b4_tracking(self):
+        msg = "net: x\n\nBody.\n\nSigned-off-by: A <a@b>\n---\nv2: changes\nFoo: bar\n"
+        self.assertEqual(mlk_common.trailers(msg), [("Signed-off-by", "A <a@b>")])
+        cover = ("net: series\n\nCover.\n\nSigned-off-by: A <a@b>\n\n"
+                 "--- b4-submit-tracking ---\n# This section is used internally by b4 prep.\n"
+                 '{\n  "series": {"revision": 1}\n}\n')
+        self.assertEqual(mlk_common.trailers(cover), [("Signed-off-by", "A <a@b>")])
+
     def test_finding_to_dict(self):
         f = mlk_common.Finding("X", "warn", "msg", commit="abc")
         self.assertEqual(f.to_dict(), {"code": "X", "severity": "warn", "message": "msg",
