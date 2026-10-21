@@ -1,0 +1,22 @@
+# Local design/plan working files (never committed)
+docs/superpowers/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Logs and locally generated evidence
+*.log
+evidence-*.json
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Scratch
+/tmp/

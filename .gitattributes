@@ -1,0 +1,9 @@
+# Scripts must run in WSL2 / Linux: always LF
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+
+*.md linguist-documentation
