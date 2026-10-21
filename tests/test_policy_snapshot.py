@@ -43,13 +43,14 @@ class PolicySnapshotTest(unittest.TestCase):
             "Documentation/process/development-process.rst",
             "Documentation/process/maintainer-netdev.rst",
             "Documentation/process/security-bugs.rst",
+            "Documentation/process/threat-model.rst",
             "MAINTAINERS",
         ])
 
     def test_missing_doc_is_info(self):
         payload = self.snap()
         missing = [f for f in payload["findings"] if f["code"] == "DOC_MISSING"]
-        self.assertEqual(len(missing), 5)
+        self.assertEqual(len(missing), 6)
         self.assertEqual({f["severity"] for f in missing}, {"info"})
         present = doc(payload, CODING_ASSISTANTS)
         self.assertTrue(present["exists"])
@@ -108,7 +109,7 @@ class PolicySnapshotTest(unittest.TestCase):
         res = run_script("policy_snapshot.py", "--repo", self.repo.path, "--upstream", "main",
                          "--json")
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        self.assertEqual(codes(json.loads(res.stdout)), ["DOC_MISSING"] * 5)
+        self.assertEqual(codes(json.loads(res.stdout)), ["DOC_MISSING"] * 6)
         res = run_script("policy_snapshot.py", "--repo", self.repo.path, "--upstream", "upstream")
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("BEHIND_UPSTREAM", res.stdout)

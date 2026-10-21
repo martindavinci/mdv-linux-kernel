@@ -26,6 +26,7 @@ POLICY_DOCS = [
     "Documentation/process/development-process.rst",
     "Documentation/process/maintainer-netdev.rst",
     "Documentation/process/security-bugs.rst",
+    "Documentation/process/threat-model.rst",
     "MAINTAINERS",
 ]
 
