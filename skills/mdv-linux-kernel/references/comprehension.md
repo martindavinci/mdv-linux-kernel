@@ -31,6 +31,10 @@ from:
   bug?"
 - **Testing.** "How do you know it works? What did the test not cover?"
 
+For patches that touch execution context, NAPI, locking or RCU, take
+questions from the exercises in `references/kernel-design/contexts.md` and
+`references/kernel-design/locking-rcu.md`.
+
 Do not ask about trivia (names of macros, line numbers). Skip questions on
 parts that are mechanically obvious; say that you skipped them.
 
