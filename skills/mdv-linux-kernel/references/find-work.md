@@ -49,7 +49,12 @@ Warn (warn + confirm) and steer away from:
 - **"theoretical" fixes** without a demonstrated problem: maintainers spend
   time disproving them.
 - **anything requiring hardware the human lacks**, unless the change is
-  build-only and says so.
+  build-only and says so (`references/build-config.md`, "When you do not
+  have the hardware").
+
+For a syzbot or crash candidate, `references/debugging.md` walks from the
+report to a reproducer, the culprit commit and a regression test; do its
+steps 1–2 before promising the human the bug is fixable.
 
 ## Candidate safeguards
 

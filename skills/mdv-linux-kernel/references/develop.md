@@ -132,7 +132,8 @@ in `maintainer-netdev.rst`. In short, as a fallback to verify there:
 - **Trailers** at the end, no blank lines between them:
   - `Fixes: <12+ char sha> ("<exact subject>")`: generate it with
     `git log -1 --pretty=fixes <sha>`; never type it from memory. Only for
-    a commit that really introduced the bug; verify by reading that commit.
+    a commit that really introduced the bug; verify by reading that commit
+    (finding it: `references/debugging.md`, step 4).
   - `Reported-by:` + `Closes: <public URL>` for reported bugs (syzbot gives
     the exact `Reported-by` line in its report). Private trackers are not
     allowed.

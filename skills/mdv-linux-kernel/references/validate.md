@@ -76,6 +76,10 @@ RANGE=$(b4 prep --show-info series-range)
 
 ## Checks
 
+A pass only counts if the changed code was enabled, built and, for runtime
+changes, actually ran: check that with `references/build-config.md`
+before recording the result.
+
 | Name (suggested) | Category | Command | Required |
 |---|---|---|---|
 | `checkpatch` | style | `python3 <skill-dir>/scripts/checkpatch_summary.py --run "$RANGE"` | always |
@@ -217,6 +221,9 @@ If nothing covers the change, say so and consider writing a test as part
 of the series.
 
 ### Bug fixes: reproducer before and after
+
+Reading the report, shrinking the reproducer, bisecting and writing the
+regression test: `references/debugging.md`.
 
 Read "Procedure for finding and fixing bugs" in `coding-assistants.rst`
 from the tree and follow it. As of this writing: note the commit ID, prove

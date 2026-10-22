@@ -168,6 +168,8 @@ Work out where the human is, then load only the references for that phase.
 | 7 Revise | feedback received, next version | `references/revise.md` |
 | Subsystem | patch touches `net/`, `drivers/net/`, netdev list | `references/netdev.md` |
 | Concepts | "what is X?", how the kernel or the stack works | `references/glossary.md`, `references/kernel-design/index.md` |
+| Debugging | crash report, syzbot bug, "where did this break?", bisect, regression test | `references/debugging.md` |
+| Build & run proof | "is my code even built/run?", Kconfig, bot build reports, no hardware | `references/build-config.md` |
 | Security | tripwire fired | `references/security.md` |
 
 Minimum path for any patch: 1 → 2 → 3 → 5 → 6. Phase 4 is optional;
