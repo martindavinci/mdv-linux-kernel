@@ -7,7 +7,10 @@ Usage: build_warnings.py diff --baseline LOG --patched LOG [--json]
 Compiler diagnostics are keyed by (path, level, message, flag) and counted,
 so a warning that only moved to another line is not new, while one more
 occurrence of an existing warning is. modpost, objtool, linker and Kconfig
-warnings are keyed by tool name and normalised message. As a safety net
+warnings are keyed by tool name and normalised message. Documentation
+builds work too: Sphinx "WARNING:"/"ERROR:" lines and kernel-doc warnings
+are keyed by file, with absolute paths cut back to the tree's top-level
+directory so two checkouts compare equal. As a safety net
 (like the netdev CI), lines mentioning warn/error are also counted in both
 logs (baseline_count, patched_count).
 Exit: 0 nothing new, 1 new diagnostics or more warn/error lines than the
@@ -33,14 +36,32 @@ TOOL_RES = [
                       r"(?P<level>warning|error): (?P<msg>.*)$")),
     ("kconfig", re.compile(r"^(?P<level>WARNING): (?P<msg>unmet direct dependencies .*)$")),
 ]
+# Sphinx (make htmldocs): "<path>[:<where>][:<line>]: WARNING: <msg>".
+SPHINX_RE = re.compile(
+    r"^(?P<path>[^:\s]+)(?::[^:]*?)?(?::\d+)?: (?P<level>WARNING|ERROR|CRITICAL): (?P<msg>.*)$")
+# Top-level directories of the kernel tree: absolute paths are cut back to them,
+# so two checkouts in different places produce the same keys.
+TREE_TOP_RE = re.compile(r"/((?:Documentation|include|drivers|net|kernel|arch|fs|mm|lib|tools|"
+                         r"scripts|block|crypto|security|sound|init|ipc|virt|rust|samples|"
+                         r"io_uring|usr|certs)/.*)$")
 # Raw NIPA-style count: any line that mentions a warning or an error.
 WARN_LINE_RE = re.compile(r"(?i)warn|error")
 
 
 def _normalise(msg: str) -> str:
     """Drop details that move with unrelated edits: line numbers and code offsets."""
-    msg = re.sub(r"(\.[chS]|\.rs):\d+(?::\d+)?", r"\1", msg)
+    msg = re.sub(r"(\.[chS]|\.rs|\.rst):\d+(?::\d+)?", r"\1", msg)
     return re.sub(r"\+0x[0-9a-fA-F]+(?:/0x[0-9a-fA-F]+)?", "+0x?", msg)
+
+
+def _tree_path(path: str) -> str:
+    while path.startswith("./"):
+        path = path[2:]
+    if path.startswith("/"):
+        m = TREE_TOP_RE.search(path)
+        if m:
+            return m.group(1)
+    return path
 
 
 def parse_diagnostics(text: str) -> Counter:
@@ -54,10 +75,13 @@ def parse_diagnostics(text: str) -> Counter:
         line = line.rstrip()
         m = DIAG_RE.match(line)
         if m:
-            path = m.group("path")
-            while path.startswith("./"):
-                path = path[2:]
+            path = _tree_path(m.group("path"))
             counter[(path, m.group("level"), m.group("msg"), m.group("flag"))] += 1
+            continue
+        m = SPHINX_RE.match(line)
+        if m:
+            counter[(_tree_path(m.group("path")), m.group("level").lower(),
+                     _normalise(m.group("msg")), None)] += 1
             continue
         for tool, regex in TOOL_RES:
             m = regex.match(line)

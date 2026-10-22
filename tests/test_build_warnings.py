@@ -93,6 +93,38 @@ class ToolDiagnosticsTest(unittest.TestCase):
         self.assertEqual(diff(a, b), [])
 
 
+class DocsDiagnosticsTest(unittest.TestCase):
+    BASE = ("/home/a/net-next/Documentation/networking/foo.rst:12: WARNING: Unknown target name: \"bar\".\n"
+            "/home/a/net-next/include/linux/foo.h:30: warning: Function parameter or struct "
+            "member 'x' not described in 'foo_do'\n")
+
+    def test_sphinx_and_kernel_doc_keys(self):
+        keys = set(build_warnings.parse_diagnostics(self.BASE))
+        self.assertIn(("Documentation/networking/foo.rst", "warning",
+                       'Unknown target name: "bar".', None), keys)
+        self.assertIn(("include/linux/foo.h", "warning",
+                       "Function parameter or struct member 'x' not described in 'foo_do'",
+                       None), keys)
+
+    def test_other_checkout_and_line_moves_are_not_new(self):
+        moved = self.BASE.replace("/home/a/net-next/", "/srv/build/wt/").replace(":12:", ":15:")
+        base = build_warnings.parse_diagnostics(self.BASE)
+        self.assertEqual(build_warnings.new_diagnostics(base, build_warnings.parse_diagnostics(moved)), [])
+
+    def test_new_sphinx_warning(self):
+        patched = self.BASE + ("/home/a/net-next/Documentation/networking/foo.rst:40: ERROR: "
+                               "Unexpected indentation.\n")
+        new = build_warnings.new_diagnostics(build_warnings.parse_diagnostics(self.BASE),
+                                             build_warnings.parse_diagnostics(patched))
+        self.assertEqual([(d["path"], d["level"]) for d in new],
+                         [("Documentation/networking/foo.rst", "error")])
+
+    def test_modpost_and_kconfig_lines_still_tools(self):
+        keys = build_warnings.parse_diagnostics(
+            "WARNING: modpost: missing MODULE_DESCRIPTION() in drivers/net/foo.o\n")
+        self.assertEqual([k[0] for k in keys], ["modpost"])
+
+
 class LineCountTest(unittest.TestCase):
     def test_line_counts(self):
         counts = build_warnings.count_lines("make: *** [x] Error 2\nWarning: foo\n  CC a.o\n")
