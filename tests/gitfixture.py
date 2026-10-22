@@ -13,9 +13,11 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILL_DIR = os.path.join(REPO_ROOT, "skills", "mdv-linux-kernel")
 SCRIPTS_DIR = os.path.join(SKILL_DIR, "scripts")
+EVAL_TOOLS_DIR = os.path.join(REPO_ROOT, "evals", "tools")
 
-if SCRIPTS_DIR not in sys.path:
-    sys.path.insert(0, SCRIPTS_DIR)
+for _path in (SCRIPTS_DIR, EVAL_TOOLS_DIR):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 
 class GitRepo:
