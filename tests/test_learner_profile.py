@@ -89,6 +89,18 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(data["level"], "normal")
         self.assertEqual(data["concepts"], ["dco", "napi"])
 
+    def test_field_shapes_enforced(self):
+        os.makedirs(os.path.dirname(self.path))
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump({"version": {"note": "works at ACME"}, "level": "less",
+                       "language": "it, lives in Rome", "created": "my diary entry",
+                       "updated": "2026-10-22T10:00:00Z", "concepts": []}, f)
+        data = json.loads(self.call("export")[1])
+        self.assertEqual(data["version"], 1)
+        self.assertIsNone(data["language"])
+        self.assertNotIn("created", data)
+        self.assertEqual(data["updated"], "2026-10-22T10:00:00Z")
+
     def test_default_path(self):
         with mock.patch.dict(os.environ, {"MLK_PROFILE": "", "XDG_CONFIG_HOME": self.dir}):
             self.assertEqual(lp.default_path(),

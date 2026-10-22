@@ -41,9 +41,12 @@ SPHINX_RE = re.compile(
     r"^(?P<path>[^:\s]+)(?::[^:]*?)?(?::\d+)?: (?P<level>WARNING|ERROR|CRITICAL): (?P<msg>.*)$")
 # Top-level directories of the kernel tree: absolute paths are cut back to them,
 # so two checkouts in different places produce the same keys.
-TREE_TOP_RE = re.compile(r"/((?:Documentation|include|drivers|net|kernel|arch|fs|mm|lib|tools|"
-                         r"scripts|block|crypto|security|sound|init|ipc|virt|rust|samples|"
-                         r"io_uring|usr|certs)/.*)$")
+# The cut is at the last such name: the checkout's own location (e.g.
+# /home/me/kernel/base/) can contain one too, the part inside the tree is the
+# same in both logs, so cutting at the last match gives the same key.
+TREE_TOP_RE = re.compile(r"(?=/((?:Documentation|include|drivers|net|kernel|arch|fs|mm|lib|"
+                         r"tools|scripts|block|crypto|security|sound|init|ipc|virt|rust|"
+                         r"samples|io_uring|usr|certs)/.*)$)")
 # Raw NIPA-style count: any line that mentions a warning or an error.
 WARN_LINE_RE = re.compile(r"(?i)warn|error")
 
@@ -58,9 +61,9 @@ def _tree_path(path: str) -> str:
     while path.startswith("./"):
         path = path[2:]
     if path.startswith("/"):
-        m = TREE_TOP_RE.search(path)
-        if m:
-            return m.group(1)
+        cuts = [m.group(1) for m in TREE_TOP_RE.finditer(path)]
+        if cuts:
+            return cuts[-1]
     return path
 
 

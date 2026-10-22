@@ -37,6 +37,7 @@ LEVELS = ["more", "normal", "less"]
 FIELDS = {"version", "level", "language", "concepts", "created", "updated"}
 CONCEPT_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 LANG_RE = re.compile(r"^[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})?$")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 class Refused(Exception):
@@ -65,8 +66,16 @@ def load(path: str) -> dict | None:
     if extra:
         print(f"warning: dropping unknown fields {extra} from the profile", file=sys.stderr)
     clean = {k: v for k, v in data.items() if k in FIELDS}
+    # Every field has a fixed shape: nothing else can travel inside one.
+    clean["version"] = 1
     if clean.get("level") not in LEVELS:
         clean["level"] = "normal"
+    language = clean.get("language")
+    clean["language"] = language if isinstance(language, str) and LANG_RE.match(language) else None
+    for key in ("created", "updated"):
+        value = clean.get(key)
+        if not (isinstance(value, str) and DATE_RE.match(value)):
+            clean.pop(key, None)
     concepts = clean.get("concepts")
     clean["concepts"] = sorted({c for c in concepts if isinstance(c, str) and CONCEPT_RE.match(c)}) \
         if isinstance(concepts, list) else []

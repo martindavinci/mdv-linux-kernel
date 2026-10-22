@@ -104,9 +104,18 @@ class GuardTest(unittest.TestCase):
             del record["attest"]
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f)
+        self.assertEqual(self.check(), (0, []))
         self.repo.git("commit", "--amend", "-q", "-m",
                       f"net: foo: fix\n\nBody.\n\nTested-by: X <x@example.org>\n{HUMAN_SOB}")
-        self.assertEqual(self.check(), (0, []))
+        self.assertEqual(self.check(), (1, ["ATTESTATION_UNVERIFIED"]))
+
+    def test_folded_trailer_is_seen(self):
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n", {"net/foo.c": "int foo = 1;\n"})
+        self.snapshot()
+        self.repo.git("commit", "--amend", "-q", "-m",
+                      "net: foo: fix\n\nBody.\n\nReviewed-by:\n Some Reviewer <r@example.org>\n"
+                      + HUMAN_SOB)
+        self.assertEqual(self.check(), (1, ["ATTESTATION_ADDED"]))
 
     def test_snapshot_is_per_series(self):
         self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
