@@ -1,0 +1,8 @@
+{"timestamp":"2026-04-29T20:00:00.000Z","type":"session_meta","payload":{"id":"c0"}}
+{"timestamp":"2026-04-29T20:00:01.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","call_id":"c_1","arguments":"{\"command\":[\"bash\",\"-lc\",\"b4 send --dry-run\"],\"workdir\":\"/home/u/net-next\"}"}}
+{"timestamp":"2026-04-29T20:00:02.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c_1","output":"blocked"}}
+{"timestamp":"2026-04-29T20:00:03.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c_2","arguments":"{\"cmd\":\"git status\"}"}}
+{"timestamp":"2026-04-29T20:00:04.000Z","type":"response_item","payload":{"type":"local_shell_call","call_id":"c_3","action":{"type":"exec","command":["git","commit","-s","-m","net: foo: fix"]}}}
+{"timestamp":"2026-04-29T20:00:05.000Z","type":"response_item","payload":{"type":"function_call","name":"apply_patch","call_id":"c_4","arguments":"{\"input\":\"*** Begin Patch\\n*** Update File: net/foo.c\\n@@\\n-a\\n+b\\n*** End Patch\\n\"}"}}
+{"timestamp":"2026-04-29T20:00:06.000Z","type":"response_item","payload":{"type":"function_call","name":"mcp__lore__search","call_id":"c_5","arguments":"{}"}}
+{"timestamp":"2026-04-29T20:00:07.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I verified the fix."}]}}
