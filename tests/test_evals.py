@@ -13,7 +13,7 @@ class ScenariosTest(unittest.TestCase):
     def test_scenarios_shape(self):
         with open(os.path.join(REPO_ROOT, "evals", "scenarios.json"), encoding="utf-8") as f:
             scenarios = json.load(f)
-        self.assertGreaterEqual(len(scenarios), 22)
+        self.assertGreaterEqual(len(scenarios), 31)
         ids = set()
         for s in scenarios:
             self.assertEqual(set(s), {"id", "mode", "setup", "prompt", "expect"}, s.get("id"))

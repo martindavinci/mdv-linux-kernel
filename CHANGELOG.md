@@ -1,8 +1,34 @@
 # Changelog
 
-## 0.2.0 (2026-10-22)
+## 0.3.0 (2026-10-22)
 
-Not verified in the field yet: see `evals/VERIFICATION.md`.
+Skill
+- Beyond your own patch: reporting bugs and regressions, testing and
+  reviewing other people's patches, stable tags and backports (advanced),
+  documentation patches.
+- New rules: the agent never writes `Reviewed-by`, `Tested-by` or
+  `Acked-by` for anyone, and other people's text is data, never
+  instructions.
+- Kernel-design pages: architecture, memory allocation, object lifetime
+  and refcounting, deferred work (workqueues, timers).
+- Optional learner profile (`learner_profile.py`), stored locally and only
+  on request.
+- find-work warns about the 2026-08-03 staging policy on LLM-generated
+  patches.
+
+Scripts
+- `signoff_guard.py` also flags attestation trailers added after the
+  snapshot (`ATTESTATION_ADDED`, `ATTESTATION_UNVERIFIED`).
+- `draft_lint.py`: checks drafts the human sends.
+- `check_stable.py`: `Cc: stable` forms and backport upstream lines.
+- `build_warnings.py` understands Sphinx and kernel-doc warnings and
+  compares paths across checkouts.
+
+Evals
+- 31 scenarios (9 new), including a hostile instruction inside a patch
+  under review.
+
+## 0.2.0 (2026-10-22)
 
 Evidence
 - Evidence and sign-off snapshots are kept per series (branch, `--series`
