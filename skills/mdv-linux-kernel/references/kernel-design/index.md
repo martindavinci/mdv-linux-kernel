@@ -18,10 +18,10 @@ real code in their checkout (`git grep`, the function they are touching).
 | [Networking stack](networking-stack.md) | available | `Documentation/networking/` |
 | [Execution contexts](contexts.md) | available | `Documentation/networking/napi.rst`, `Documentation/networking/netdevices.rst` |
 | [Locking and RCU](locking-rcu.md) | available | `Documentation/locking/`, `Documentation/RCU/` |
-| Architecture overview | planned | `Documentation/process/howto.rst`, `Documentation/admin-guide/` |
-| Memory management | planned | `Documentation/mm/`, `Documentation/core-api/memory-allocation.rst` |
-| Object lifetime and refcounting | planned | `Documentation/core-api/kref.rst`, `Documentation/core-api/refcount-vs-atomic.rst` |
-| Deferred work (workqueues, timers) | planned | `Documentation/core-api/workqueue.rst`, `Documentation/timers/` |
+| [Architecture overview](architecture.md) | available | `Documentation/process/howto.rst`, `Documentation/admin-guide/` |
+| [Memory allocation](memory.md) | available | `Documentation/mm/`, `Documentation/core-api/memory-allocation.rst` |
+| [Object lifetime and refcounting](lifetime-refcount.md) | available | `Documentation/core-api/kref.rst`, `Documentation/core-api/refcount-vs-atomic.rst` |
+| [Deferred work (workqueues, timers)](deferred-work.md) | available | `Documentation/core-api/workqueue.rst`, `Documentation/timers/` |
 | Driver model | planned | `Documentation/driver-api/driver-model/` |
 | Processes and scheduler | planned | `Documentation/scheduler/` |
 | Filesystems / VFS | planned | `Documentation/filesystems/` |
