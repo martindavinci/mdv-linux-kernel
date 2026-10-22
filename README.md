@@ -8,8 +8,11 @@ bar: it asks for evidence (real builds, tests and checks, tied to the exact
 code), it makes sure the human understands what they send, and it follows the
 kernel's own rules as written in the tree you are working on.
 
-> Status: early. Not affiliated with the Linux Foundation, kernel.org or any
-> kernel maintainer.
+> Status: early, **not yet verified in the field**: the scripts are unit
+> tested, but the skill has not been run end to end on a real kernel tree
+> with Claude Code and Codex yet (see `evals/VERIFICATION.md`, the release
+> gate). Not affiliated with the Linux Foundation, kernel.org or any kernel
+> maintainer.
 
 ## Why
 
@@ -25,10 +28,10 @@ missing understanding. This skill attacks those two things.
 
 | Phase | What the skill does |
 |---|---|
-| Orientation | Explains how kernel development works (email patches, trees, merge window, trailers, b4) at the moment each concept matters. A glossary and kernel design pages are loaded on demand. |
+| Orientation | Explains how kernel development works (email patches, trees, merge window, trailers, b4) at the moment each concept matters. A glossary and kernel design pages (networking stack, execution contexts, locking and RCU) are loaded on demand. |
 | Setup | Checks the environment (`env_check.py`), guides installing the toolchain, b4, virtme-ng, sparse and so on, cloning `net`/`net-next`, and the sending setup. |
 | Find work | Proposes real work (syzbot, regressions, explicit TODOs). It checks each candidate for existing fixes, reproducibility, hardware needs and difficulty, and steers away from standalone cleanups. |
-| Develop | The AI can co-write the code and explains each change as it goes. |
+| Develop | The AI can co-write the code and explains each change as it goes. For bugs it walks through reading the report, reproducing, bisecting to the culprit commit and writing a regression test. |
 | Validate | Runs checkpatch, `W=1 C=1` builds, the netdev build minimum compared against a baseline build, static analysers, kselftest/KUnit and virtme-ng. Every result is stored per series with the exact state it ran on (`evidence.py`): required checks that were never run show as missing, test output and kernel splats are read rather than trusting the exit code, and anything changed afterwards is marked stale (builds and tests survive message-only changes such as the sign-off). |
 | External review | Optionally runs review-prompts and/or Sashiko as independent reviewers. Each finding must be fixed or answered. |
 | Slop gate | Commit message lint, `Fixes:` verification, maintainers' slop indicators, churn check, recipients. |
@@ -134,16 +137,24 @@ Reporting commands support `--json` (`evidence.py status`, the checkers,
 python3 -m unittest discover -s tests -t . -v
 ```
 
-See [`evals/README.md`](evals/README.md) for behaviour evaluation of the skill
-itself.
+See [`evals/README.md`](evals/README.md) for evaluating the skill itself:
+the smoke test on a real kernel tree, the session audit, the results log,
+the historical netdev dataset and the field verification protocol. Eval
+sessions run without sending credentials and with egress to mail and
+submission endpoints blocked.
 
 ## Roadmap
 
+- Run `evals/VERIFICATION.md` on WSL2 and Linux with Claude Code and Codex;
+  grow the historical dataset to 12-20 cases.
 - More pages under `references/kernel-design/` (architecture, memory
-  management, locking and RCU, driver model, scheduler, VFS).
-- Guided private security reporting.
-- In-depth support for more subsystems.
-- More agents tested.
+  management, object lifetime and refcounting, deferred work, driver
+  model, scheduler, VFS).
+- Guided preparation of security reports, once the security routing
+  scenarios pass.
+- In-depth support for one more subsystem, chosen by demand and available
+  test hardware.
+- More agents tested (Gemini CLI, Copilot CLI); macOS through a Linux VM.
 
 ## License
 
