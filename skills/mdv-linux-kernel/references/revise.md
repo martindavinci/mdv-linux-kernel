@@ -28,7 +28,7 @@ get discouraged - or impatient" in `submitting-patches.rst`, and for netdev
 
 ## 2. Map every comment
 
-Keep `$STATE/review-v<N>.md`:
+Keep `$SERIES/review-v<N>.md`:
 
 ```
 # | from | patch | comment (short) | action | status
@@ -75,7 +75,9 @@ send. Reviewers who commented should be in Cc of the next version
   for the old version usually does not survive a substantial change to
   that patch. Drop it, or keep it only for trivial changes, and say which
   in the changelog.
-- Any amend (and the human's `b4 trailers -u`) makes evidence stale. Re-run
+- A code change makes build and test evidence stale; any amend (and the
+  human's `b4 trailers -u`) makes the style, static and review entries
+  stale. Re-run
   validation (`references/validate.md`) under the same check names, which
   replaces the old results, then the slop gate and the sign-off check. The
   human's existing `Signed-off-by` lines stay; new commits in the series

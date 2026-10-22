@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest import mock
 
 from tests.gitfixture import GitRepo, make_tmpdir
 
@@ -33,6 +34,37 @@ class StateDirTest(unittest.TestCase):
         sd = mlk_common.state_dir(wt)
         self.assertTrue(same_path(sd, os.path.join(self.repo.path, ".git", "mdv-linux-kernel")))
         self.assertTrue(os.path.isdir(sd))
+
+
+class SeriesDirTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = make_tmpdir(self)
+        self.repo = GitRepo.create(self.tmp)
+        self.repo.commit("init", {"README": "x\n"})
+
+    def test_series_dir_from_branch(self):
+        self.repo.git("switch", "-q", "-c", "b4/net-foo")
+        self.assertEqual(mlk_common.current_branch(self.repo.path), "b4/net-foo")
+        sd = mlk_common.series_dir(self.repo.path)
+        expected = os.path.join(mlk_common.state_dir(self.repo.path), "series", "b4--net-foo")
+        self.assertTrue(same_path(sd, expected))
+        self.assertTrue(os.path.isdir(sd))
+
+    def test_explicit_series_and_detached(self):
+        self.repo.git("switch", "-q", "--detach", "HEAD")
+        self.assertIsNone(mlk_common.current_branch(self.repo.path))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MLK_SERIES", None)
+            with self.assertRaises(ValueError):
+                mlk_common.series_dir(self.repo.path)
+        sd = mlk_common.series_dir(self.repo.path, "weird name/x")
+        self.assertTrue(sd.endswith(os.path.join("series", "weird_name--x")))
+
+    def test_worktrees_get_their_own_series(self):
+        wt = os.path.join(self.tmp, "wt")
+        self.repo.git("worktree", "add", "-q", "-b", "wtbranch", wt)
+        self.assertFalse(same_path(mlk_common.series_dir(wt),
+                                   mlk_common.series_dir(self.repo.path)))
 
 
 class GitHelpersTest(unittest.TestCase):

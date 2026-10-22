@@ -69,12 +69,21 @@ class GuardTest(unittest.TestCase):
     def test_snapshot_file(self):
         self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
         self.snapshot()
-        path = os.path.join(mlk_common.state_dir(self.repo.path), "signoff-snapshot.json")
+        path = os.path.join(mlk_common.series_dir(self.repo.path), "signoff-snapshot.json")
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         self.assertEqual(data["sob"], ["Test Human <human@example.org>"])
         self.assertEqual(data["range"], f"{self.base}..HEAD")
         self.assertIn("created", data)
+
+    def test_snapshot_is_per_series(self):
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
+        self.snapshot()
+        self.assertEqual(self.check(), (0, []))
+        self.repo.git("switch", "-q", "-c", "other")
+        self.assertEqual(self.check(), (1, ["NO_SNAPSHOT"]))
+        res = self.guard("check", f"{self.base}..HEAD", "--series", "main", "--json")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_preserved_human_sob_not_flagged(self):
         self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n", {"net/foo.c": "int foo = 1;\n"})
@@ -143,7 +152,7 @@ class GuardTest(unittest.TestCase):
         self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
         self.repo.commit("net: foo: more\n\nBody.\n")
         self.snapshot()
-        path = os.path.join(mlk_common.state_dir(self.repo.path), "signoff-snapshot.json")
+        path = os.path.join(mlk_common.series_dir(self.repo.path), "signoff-snapshot.json")
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         self.assertEqual(data["commits"], [
@@ -174,7 +183,7 @@ class GuardTest(unittest.TestCase):
 
     def test_old_snapshot_without_commits(self):
         self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
-        path = os.path.join(mlk_common.state_dir(self.repo.path), "signoff-snapshot.json")
+        path = os.path.join(mlk_common.series_dir(self.repo.path), "signoff-snapshot.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"created": "2026-10-01T00:00:00Z", "range": "x",
                        "sob": ["Test Human <human@example.org>"]}, f)

@@ -25,7 +25,7 @@ the patch:
 
 1. Stop ordinary preparation: no external review (it sends the code to an
    LLM provider), no posting, no drafting of public text.
-2. Keep the reproducer local (`$STATE/`), out of commit messages, cover
+2. Keep the reproducer local (`$SERIES/`), out of commit messages, cover
    letters, bug trackers and chats with third parties.
 3. Tell the human what you saw, in one or two sentences, and that the
    rules below decide what happens next.

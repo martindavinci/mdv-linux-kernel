@@ -86,11 +86,12 @@ The cover letter already carries their sign-off from `b4 prep -n` /
 `--enroll`. With another cover strategy, check the b4 docs for the right
 base before rebasing.
 
-`git rebase --signoff` rewrites every patch commit, so all evidence entries
-become `stale`. That is expected: `evidence.py status` and the report are
-checked before the human signs (`references/submit.md`). Do not ask for a
-re-run of everything because of the sign-off alone; do confirm that
-`git rev-parse HEAD^{tree}` still equals the tree of the validated state.
+`git rebase --signoff` rewrites every patch commit but not the code.
+Build, test and repro evidence stays valid (it depends on the trees of
+the patches); checkpatch, message and review entries go stale and the
+quick ones are re-run (`references/submit.md`, after step 1). Do not ask
+for a re-run of the builds because of the sign-off alone; if a build or
+test entry turns stale, something other than the sign-off changed.
 
 ## 6. After the human signed
 

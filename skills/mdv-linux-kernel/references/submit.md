@@ -33,7 +33,8 @@ Then confirm, item by item:
 - [ ] tree: `net` vs `net-next` correct, prefix set, and for net-next the
       tree is open (`references/netdev.md`)
 - [ ] base is recent and on the target tree, not linux-next or stable
-- [ ] `evidence.py status` exits 0, or each fail/stale/skip was confirmed
+- [ ] `evidence.py status` exits 0, or each fail/stale/skip was confirmed;
+      no required check is `missing`
 - [ ] no `EDITME` left in the cover letter (`needs-editing` false)
 - [ ] recipients from `b4 prep --auto-to-cc` reviewed
 - [ ] transparency note present (`references/disclosure.md`)
@@ -49,20 +50,20 @@ Each unchecked item is a warning: warn + confirm.
 
 ## 3. Final summary for the human
 
-Regenerate `$STATE/report.md` (`evidence.py report`) and present:
+Regenerate `$SERIES/report.md` (`evidence.py report`) and present:
 
 ```
 Series: <cover subject>  (<N> patches, v<rev>, target <tree>)
 Base: <sha> (<date>)
-Evidence: <pass count> pass, <skip count> skipped, <fail/stale> fail/stale
+Evidence: <pass count> pass, <skip count> skipped, <fail/stale/missing> fail/stale/missing
   Skipped: <name: reason>
 Open findings: <none | list with where they are answered>
 Warnings you accepted: <CODE: your words>
 Disclosure: <cover-letter note | Assisted-by per tree text>
-Comprehension: <outcome>
+Comprehension: <outcome; if skipped: "skipped, the understanding requirement of generated-content.rst is not met">
 Security screen: <outcome>
 Not tested: <hardware, configs, archs>
-Full report: <path to $STATE/report.md>
+Full report: <path to $SERIES/report.md>
 ```
 
 Do not call the series "ready", "validated" or "tested" beyond what this
@@ -90,14 +91,22 @@ b4 send --reflect
 b4 send
 ```
 
-Sections 2 and 3 (evidence status and the report) happen before step 1:
-the sign-off rewrites the commits, after which every evidence entry shows
-`stale`. That staleness is expected; do not ask for a full re-run because
-of it. After step 1, check that `git rev-parse HEAD^{tree}` equals the
-tree in the report, re-run `signoff_guard.py check` (expect the human's
-new lines, see `references/signoff-dco.md`) and `b4 prep --check`
-(sign-off no longer pending), then the human goes on to steps 2-4. If
-anything other than the sign-off changed, go back to validation.
+Sections 2 and 3 (evidence status and the report) happen before step 1.
+The sign-off rewrites the commits but not the code: build, test and repro
+entries stay `pass`; style, static and review entries become `stale` with
+"only commit messages changed". After step 1:
+
+1. `signoff_guard.py check` (expect the human's new lines, see
+   `references/signoff-dco.md`) and `b4 prep --check` (sign-off no longer
+   pending).
+2. Re-run the quick commit-scope checks under their existing names
+   (`checkpatch`, `commit-msg-lint`, `fixes-tags`, smatch/coccicheck if
+   recorded). For an external review, ask the human whether to re-run it
+   or accept it with unchanged code (warn + confirm).
+3. `evidence.py status`: every build/test/repro entry must still be
+   `pass`. If one turned `stale`, the code changed: go back to
+   validation.
+4. Regenerate the report, then the human goes on to steps 2-4.
 
 ## 5. After sending
 

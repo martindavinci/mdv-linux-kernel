@@ -39,8 +39,28 @@ Immediately after the human's `b4 prep`, before you change any commit:
 ```
 BASE=$(b4 prep --show-info base-commit)
 python3 <skill-dir>/scripts/evidence.py init --base "$BASE"
+python3 <skill-dir>/scripts/evidence.py require --preset netdev   # or generic outside netdev
 python3 <skill-dir>/scripts/signoff_guard.py snapshot "$BASE..HEAD"
 python3 <skill-dir>/scripts/evidence.py note --key policy --value "<policy_snapshot summary>"
+SERIES=$(python3 <skill-dir>/scripts/evidence.py where)
+```
+
+Both the store and the snapshot belong to the current branch (the b4 prep
+branch): another series, or another worktree, gets its own. On a detached
+HEAD the scripts refuse to guess; pass `--series <branch>`.
+
+`require` declares the checks the series cannot go without; a required
+check with no result shows as `missing` and `evidence.py status` fails
+until it is run, or recorded as a `skip` with a reason. The `netdev`
+preset adds the builds `maintainer-netdev.rst` asks for; both presets add
+`fixes-tags` when a patch carries `Fixes:` (re-run `require --preset ...`
+after adding one). Add what this patch needs on top, for example:
+
+```
+python3 <skill-dir>/scripts/evidence.py require --name selftest-udpgro --category test \
+  --why "changes the UDP GRO path"
+python3 <skill-dir>/scripts/evidence.py require --name repro-before --category repro --why "bug fix"
+python3 <skill-dir>/scripts/evidence.py require --name repro-after --category repro --why "bug fix"
 ```
 
 The snapshot records every `Signed-off-by` that exists now (the human's,
@@ -51,7 +71,7 @@ at the points named in `references/signoff-dco.md`.
 `evidence.py init` refuses to overwrite an existing store (exit 1). Use
 `--force` only when starting a new series, or when the series moves to a
 new base: save the old report first
-(`evidence.py report > "$STATE/report-<old-base>.md"`), then
+(`evidence.py report > "$SERIES/report-<old-base>.md"`), then
 `evidence.py init --base <new base> --force`. A new version (vN) on the
 same base keeps the store; re-running checks under the same names
 replaces the old results.
@@ -81,7 +101,7 @@ replaces the old results.
 
 ## 4. The why-log
 
-Keep a running log at `$STATE/why-log.md` (outside the tree). One entry per
+Keep a running log at `$SERIES/why-log.md` (outside the tree). One entry per
 decision:
 
 ```
@@ -152,13 +172,13 @@ With b4 0.17 or later (`b4 --version`), edit it without an editor,
 keeping the human's `Signed-off-by` line exactly as it is:
 
 ```
-b4 prep --show-cover > "$STATE/cover.txt"
-# edit "$STATE/cover.txt"
-b4 prep --cover-from-file "$STATE/cover.txt"
+b4 prep --show-cover > "$SERIES/cover.txt"
+# edit "$SERIES/cover.txt"
+b4 prep --cover-from-file "$SERIES/cover.txt"
 python3 <skill-dir>/scripts/signoff_guard.py check "$BASE..HEAD"
 ```
 
-With an older b4, write the draft to `$STATE/cover-draft.txt` and ask the
+With an older b4, write the draft to `$SERIES/cover-draft.txt` and ask the
 human to run `b4 prep --edit-cover` and paste it in (keeping their
 `Signed-off-by`); then run the sign-off check. Do not script the editor.
 
@@ -169,8 +189,8 @@ single patch, b4 puts the cover text below the `---` of the patch, where it
 does not enter git history.
 
 With b4's default cover strategy the cover letter is a commit at the start
-of the series, so editing it rewrites every patch commit and makes recorded
-evidence stale (`references/validate.md`). Write the cover letter before
+of the series, so editing it rewrites every patch commit and makes the
+style, static and review evidence stale (`references/validate.md`). Write the cover letter before
 the final validation round.
 
 ## Done when

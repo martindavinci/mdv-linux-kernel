@@ -29,7 +29,7 @@ missing understanding. This skill attacks those two things.
 | Setup | Checks the environment (`env_check.py`), guides installing the toolchain, b4, virtme-ng, sparse and so on, cloning `net`/`net-next`, and the sending setup. |
 | Find work | Proposes real work (syzbot, regressions, explicit TODOs). It checks each candidate for existing fixes, reproducibility, hardware needs and difficulty, and steers away from standalone cleanups. |
 | Develop | The AI can co-write the code and explains each change as it goes. |
-| Validate | Runs checkpatch, `W=1 C=1` builds, the netdev build minimum compared against a baseline build, static analysers, kselftest/KUnit and virtme-ng. Every result is stored with the exact tree state it ran on (`evidence.py`), and anything changed afterwards is marked stale. |
+| Validate | Runs checkpatch, `W=1 C=1` builds, the netdev build minimum compared against a baseline build, static analysers, kselftest/KUnit and virtme-ng. Every result is stored per series with the exact state it ran on (`evidence.py`): required checks that were never run show as missing, test output and kernel splats are read rather than trusting the exit code, and anything changed afterwards is marked stale (builds and tests survive message-only changes such as the sign-off). |
 | External review | Optionally runs review-prompts and/or Sashiko as independent reviewers. Each finding must be fixed or answered. |
 | Slop gate | Commit message lint, `Fixes:` verification, maintainers' slop indicators, churn check, recipients. |
 | Comprehension | Asks the human targeted questions about the patch. Skipping them needs a strong warning and an explicit written confirmation. |
@@ -121,12 +121,12 @@ Reporting commands support `--json` (`evidence.py status`, the checkers,
 |---|---|
 | `env_check.py` | toolchain, KVM, disk, memory, WSL detection |
 | `policy_snapshot.py` | which process docs the tree has, their revision, local edits, staleness vs upstream |
-| `evidence.py` | runs checks and records results tied to the tree state; reports stale entries |
+| `evidence.py` | per-series evidence: required checks, runs with timeout, TAP/KTAP/KUnit and splat checks, results tied to the code they ran on; reports missing and stale entries |
 | `checkpatch_summary.py` | runs/parses checkpatch; a missing sign-off is "pending human sign-off" |
 | `commit_msg_lint.py` | changelog heuristics (subject prefix, imperative mood, wrapping, LLM-style prose) |
 | `check_fixes.py` | verifies `Fixes:` tags (format, SHA, title, ancestry) |
 | `build_warnings.py` | new warnings compared with a baseline build, ignoring line-number shifts |
-| `signoff_guard.py` | flags sign-offs added after the agent started (series-wide and per patch) and AI identities in trailers |
+| `signoff_guard.py` | flags sign-offs added after the agent started (series-wide and per patch, snapshot per series) and AI identities in trailers |
 
 ## Development
 

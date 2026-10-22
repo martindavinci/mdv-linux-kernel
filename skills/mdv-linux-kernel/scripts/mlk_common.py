@@ -59,6 +59,35 @@ def state_dir(repo: str) -> str:
     return path
 
 
+def current_branch(repo: str) -> str | None:
+    """Short name of the checked-out branch, or None on a detached HEAD."""
+    res = run_git(["symbolic-ref", "--quiet", "--short", "HEAD"], repo)
+    if res.returncode != 0:
+        return None
+    return res.stdout.strip() or None
+
+
+def series_name(repo: str, explicit: str | None = None) -> str:
+    """The series a command works on: --series, else $MLK_SERIES, else the branch."""
+    name = explicit or os.environ.get("MLK_SERIES") or current_branch(repo)
+    if not name:
+        raise ValueError("detached HEAD: switch to the series branch or pass --series NAME")
+    return name
+
+
+def series_dir(repo: str, explicit: str | None = None) -> str:
+    """<state dir>/series/<series>, created if missing.
+
+    Evidence and sign-off snapshots are per series: two series (or two
+    worktrees) of one repository must never share or overwrite results.
+    """
+    name = series_name(repo, explicit)
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name.replace("/", "--"))
+    path = os.path.join(state_dir(repo), "series", safe)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def commits_in_range(repo: str, rev_range: str) -> list[str]:
     out = git(["rev-list", "--reverse", rev_range, "--"], repo)
     return out.split()

@@ -79,6 +79,14 @@ for example:
 "ok", "yes", "go ahead" or a thumbs-up is not enough. If they refuse to
 write it, do not go on to submission preparation.
 
+The confirmation records the human's choice; it does not satisfy the
+requirement. Never describe a skipped check as passed or "waived": the
+in-tree expectation that they understand and can defend the patch still
+applies and is still unmet. Say so in the final summary
+(`references/submit.md`: "Comprehension: skipped, the understanding
+requirement of generated-content.rst is not met"), and offer to go
+through the questions again before they sign.
+
 ## 4. Record
 
 ```

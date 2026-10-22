@@ -11,7 +11,8 @@ criteria.
 
 Run it after the first validation round and any external review. Edits
 it causes to commit messages, the cover letter or recipients rewrite the
-commits and make evidence stale, so finish them before the final
+commits and make the style, static and review evidence stale (builds and
+tests survive message-only changes), so finish them before the final
 validation round (`references/validate.md`). Range:
 
 ```

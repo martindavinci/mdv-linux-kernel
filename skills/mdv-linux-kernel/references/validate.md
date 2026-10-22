@@ -3,56 +3,73 @@
 # Validate
 
 Run the real tools and record every result in the evidence store. The
-store ties each result to the exact code tree; any later change makes the
-result `stale`. Nothing counts as tested unless `evidence.py status` shows
-`pass` for it.
+store ties each result to the exact code it ran on; a later change makes
+the result `stale`. Nothing counts as tested unless `evidence.py status`
+shows `pass` for it.
 
 ## Evidence workflow
 
 ```
 E="python3 <skill-dir>/scripts/evidence.py"
-$E run  --name <name> --category <build|static|test|style|review|repro> [--input FILE]... -- <command...>
+$E require --preset netdev        # once, after init (references/develop.md)
+$E run  --name <name> --category <build|static|test|style|review|repro> \
+        [--input FILE]... [--timeout SECONDS] -- <command...>
 $E skip --name <name> --category <cat> --reason "<why it could not run>"
-$E status            # exit 1 if anything is fail or stale
-$E report > "$STATE/report.md"
+$E status            # exit 1 if anything is fail, stale or missing, or nothing was recorded
+$E report > "$SERIES/report.md"
 ```
 
 - `run` executes the command in the repo, saves the full log and records
-  the command's exit code, duration, toolchain versions and the tree
-  state. It exits 0 if the command passed and 1 if it failed (the real
-  exit code is in the entry).
+  the command's exit code, duration, toolchain versions, build-related
+  environment (`ARCH`, `LLVM`, `CROSS_COMPILE`...) and the tree state. It
+  exits 0 if the check passed (or was all skipped) and 1 if it failed (the
+  real exit code is in the entry).
 - `--input FILE` (repeatable) records the hash of a file the result depends
   on but git does not track: the build directory's `.config`, the kernel
-  image a runtime test booted. Pass them, otherwise a changed config or a
-  rebuilt kernel goes unnoticed.
+  image a runtime test booted, the baseline log a warning diff compared
+  against. Pass them, otherwise a changed config, a rebuilt kernel or a
+  different baseline goes unnoticed.
+- `--timeout SECONDS` kills the command (and everything it started) and
+  records a failure. Use it for VM runs and reproducers that can hang.
+- For `--category test` the log is read as well: any failed TAP/KTAP
+  (kselftest) or KUnit result, no result at all, or a kernel splat
+  (`Call Trace:`, `BUG:`, KASAN/UBSAN/KCSAN, lockdep and RCU warnings,
+  hung tasks, kmemleak) makes the entry `fail` even when the command
+  exited 0. If every result was skipped, the entry is `skip`, with the
+  reason. `--results none` / `--splats ignore` turn this off for commands
+  that print no TAP output; say why when you use them.
 - All subcommands need `init` first (`references/develop.md`); without it
-  they exit 2.
+  they exit 2. Required checks with no entry show as `missing`.
 - A check you cannot run is a `skip` with a reason, never omitted and never
   a pass. Typical reasons: no KVM, no hardware, tool not installed.
-- An entry is valid only for the exact HEAD commit *and* tree it was
-  recorded on. Any amend or rebase makes it `stale`, including
-  message-only changes, `b4 prep --edit-cover` / `--cover-from-file` /
-  `--auto-to-cc` (they rewrite the series' commits) and `b4 trailers -u`.
-  Uncommitted changes and untracked files also make results stale (an
-  untracked new header can make a build pass that the posted patch would
-  fail): commit or remove them first. A different toolchain or a changed
-  `--input` file makes results stale too.
+- What makes an entry `stale`:
+  - build, test and repro entries ("code" scope): any change to the code
+    of any patch in the series. They depend on the tree of every commit
+    in `base..HEAD`, so rewording messages, `b4 prep --edit-cover` /
+    `--cover-from-file` / `--auto-to-cc`, `b4 trailers -u` and the human's
+    `git rebase --signoff` keep them valid. Moving code between patches
+    does not: every patch must build on its own.
+  - static, style and review entries ("commits" scope): any amend or
+    rebase, since checkpatch and the message checks read the messages.
+    When only messages changed, `status` says so.
+  - any entry: uncommitted changes and untracked files (an untracked new
+    header can make a build pass that the posted patch would fail; commit
+    or remove them first), a different toolchain, a changed `--input`
+    file.
 - Re-running a check with the same `--name` replaces the old result;
   `status` and `report` show only the latest entry per name.
 - So: finish commit messages, cover letter and recipients (the slop gate,
-  `references/slop-gate.md`) before the final validation round, then
-  re-run everything once. If only messages changed after an expensive run,
-  the tree is unchanged: compare `git rev-parse HEAD^{tree}` with the
-  entry's `state.tree` in `status --json`. Re-run if you can; otherwise
-  present it as stale with identical tree and ask the human to accept it
-  (warn + confirm). Never relabel it as pass.
-- The human's `git rebase --signoff` also makes everything stale. That is
-  expected: the evidence check is done before they sign
-  (`references/submit.md`).
+  `references/slop-gate.md`) before the final validation round. After
+  message-only changes, re-run the quick commit-scope checks. For an
+  expensive one (an external review) that shows "only commit messages
+  changed", re-run it if the change could matter to it; otherwise present
+  it as stale with unchanged code and ask the human to accept it (warn +
+  confirm). Never relabel it as pass.
 
 Set up once per session (see SKILL.md, Conventions):
 ```
 STATE="$(cd "$(git rev-parse --git-common-dir)" && pwd)/mdv-linux-kernel"
+SERIES=$($E where)
 BASE=$(b4 prep --show-info base-commit)
 RANGE=$(b4 prep --show-info series-range)
 ```
@@ -141,9 +158,9 @@ make O=$KB W=1 -j$(nproc) 2>&1 | tee "$STATE/baseline-allmodconfig-$(git rev-par
 git switch -                      # back to the series branch
 $E run --name allmodconfig-W1 --category build --input "$KB/.config" -- make O=$KB W=1 -j$(nproc)
 # the "log" field of the allmodconfig-W1 item in "entries" of: $E status --json
-$E run --name new-warnings-allmodconfig --category build -- \
-  python3 <skill-dir>/scripts/build_warnings.py diff \
-    --baseline "$STATE/baseline-allmodconfig-<base12>.log" --patched <that log>
+BL="$STATE/baseline-allmodconfig-<base12>.log"
+$E run --name new-warnings-allmodconfig --category build --input "$BL" --input <that log> -- \
+  python3 <skill-dir>/scripts/build_warnings.py diff --baseline "$BL" --patched <that log>
 ```
 
 Repeat with `allyesconfig` in its own build
@@ -175,19 +192,22 @@ git worktree add --detach "$WT" HEAD          # later: git -C "$WT" checkout --d
 cd "$WT" && vng --build --config tools/testing/selftests/net/config && make headers
 make -C tools/testing/selftests TARGETS=net
 cd -
-$E run --name selftest-<test> --category test \
+$E run --name selftest-<test> --category test --timeout 3600 \
   --input "$WT/.config" --input "$WT/arch/x86/boot/bzImage" -- \
-  vng --run "$WT" --user root --cpus 4 -- \
-  make -C "$WT/tools/testing/selftests" TARGETS=net TEST_PROGS=<test>.sh TEST_GEN_PROGS="" run_tests
+  vng --run "$WT" --user root --cpus 4 -- sh -c \
+  'make -C "'"$WT"'/tools/testing/selftests" TARGETS=net TEST_PROGS=<test>.sh TEST_GEN_PROGS="" run_tests; rc=$?; dmesg; exit $rc'
 ```
 
 Before every re-run, confirm `git -C "$WT" rev-parse HEAD^{tree}` equals
 `git rev-parse HEAD^{tree}`; otherwise the VM runs old code. The NIPA wiki
 page "How to run netdev selftests CI style" has the exact CI commands
-(including a container image). Look for `not ok`, `# SKIP`, and kernel
-splats (`Call Trace:`, KASAN, lockdep) in the log; a test that exits 0 with
-a splat is a fail. Also try `kernel/configs/debug.config` for locking or
-memory changes.
+(including a container image). The trailing `dmesg` puts the guest's
+kernel log into the evidence log: `evidence.py` fails the entry on a
+`not ok` result, on no results at all, and on kernel splats (`Call
+Trace:`, KASAN, lockdep...), even when the command exits 0. Still read the
+log yourself: a `# SKIP` caused by a missing tool or config is a gap to
+fix (the test's `config` file, `vng --configitem`), not a pass. Also try
+`kernel/configs/debug.config` for locking or memory changes.
 
 **Choosing tests**: `git grep -l -e <function> -e <sysctl/feature> tools/testing/selftests/net tools/testing/selftests/drivers/net`,
 the test files listed in the MAINTAINERS entry of the touched files, and
@@ -212,11 +232,17 @@ outcome, so both entries are `pass` when the fix works:
 
 ```
 B=$HOME/src/mlk-wt/base
-$E run --name repro-before --category repro -- vng --run "$B" --user root -- \
+$E run --name repro-before --category repro --timeout 900 --input "$B/arch/x86/boot/bzImage" -- \
+  vng --run "$B" --user root -- \
   sh -c '<repro command>; dmesg | grep -q "<expected splat, e.g. BUG: KASAN>"'
-$E run --name repro-after --category repro -- vng --run "$WT" --user root -- \
+$E run --name repro-after --category repro --timeout 900 --input "$WT/arch/x86/boot/bzImage" -- \
+  vng --run "$WT" --user root -- \
   sh -c '<repro command> && ! dmesg | grep -q "<same pattern>"'
 ```
+
+`repro` entries do not scan for splats on their own (the "before" run is
+meant to produce one), so the assertion inside the command is what
+decides; a timeout counts as a failure.
 
 Adapt the assertion to the bug (a wrong return value, a hang caught by
 `timeout`, a counter). If the tripwire fired (`references/security.md`),
@@ -236,6 +262,6 @@ on real hardware.
 
 ## Done when
 
-- [ ] `evidence.py status` exits 0, or every fail/stale/skip is explained
+- [ ] `evidence.py status` exits 0 (nothing missing), or every fail/stale/skip is explained
       to the human and confirmed (warn + confirm)
-- [ ] `$STATE/report.md` regenerated after the last run
+- [ ] `$SERIES/report.md` regenerated after the last run

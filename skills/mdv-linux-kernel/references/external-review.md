@@ -55,7 +55,7 @@ review-prompts command in a new session.
   and review commit <sha>", as the slash command files do.
 
 These run interactively, so save the output to
-`$STATE/review-<tool>-<n>.txt` and record a note (below).
+`$SERIES/review-<tool>-<n>.txt` and record a note (below).
 
 **Sashiko** (non-interactive, record it as evidence):
 ```
@@ -69,7 +69,7 @@ Do not add `--report-preexisting` unless the human wants old bugs too.
 
 Each finding is either fixed or rebutted with a reason, the same rule
 netdev applies to its AI review ("either debate it or address it"). Keep a
-table in `$STATE/review-findings.md`:
+table in `$SERIES/review-findings.md`:
 
 ```
 # | tool/run | finding (short) | verdict | where / why

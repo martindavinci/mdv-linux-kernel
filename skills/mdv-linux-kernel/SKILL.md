@@ -133,8 +133,12 @@ private channel; explain the rules that apply, read from the tree.
   git error (`evidence.py run` returns 1 when the command failed and keeps
   the command's real exit code in the entry). Use `--json` when you need to parse output.
 - Script state lives in `<git-common-dir>/mdv-linux-kernel/`, never in the
-  tracked tree. In shell snippets:
-  `STATE="$(cd "$(git rev-parse --git-common-dir)" && pwd)/mdv-linux-kernel"`.
+  tracked tree. Evidence and the sign-off snapshot are per series (the
+  current branch; `--series NAME` on a detached HEAD). In shell snippets:
+  ```
+  STATE="$(cd "$(git rev-parse --git-common-dir)" && pwd)/mdv-linux-kernel"  # shared: baseline logs
+  SERIES=$(python3 <skill-dir>/scripts/evidence.py where)                   # this series
+  ```
 - The series is managed by `b4 prep` (default `commit` cover strategy: an
   empty cover-letter commit at the start of the series). In a prep branch:
   ```
@@ -144,8 +148,9 @@ private channel; explain the rules that apply, read from the tree.
   ```
   Use `"$RANGE"` for checkpatch, lint and `Fixes:` checks; use
   `"$BASE..HEAD"` for the sign-off guard (it must see the cover letter too).
-- Write temporary files (cover drafts, why-log, baseline logs) under
-  `$STATE`, never in the tracked tree.
+- Write the series' files (cover drafts, why-log, review notes, report,
+  reproducers) under `$SERIES` and baseline build logs (shared by every
+  series on the same base) under `$STATE`, never in the tracked tree.
 
 ## Phase map
 
@@ -192,7 +197,7 @@ subsystem's MAINTAINERS entry and `maintainer-*.rst` (if any). Say so.
 |---|---|
 | `scripts/env_check.py` | Environment and tool check (`--json`, `--path DIR`); phase 0. |
 | `scripts/policy_snapshot.py` | Freshness of process docs vs upstream (`--upstream REF`, `--max-age-days N`). |
-| `scripts/evidence.py` | Evidence store: `init --base`, `run --name --category [--input PATH]... -- CMD`, `skip`, `note --key`, `status`, `report`. |
+| `scripts/evidence.py` | Evidence store per series: `init --base`, `require --preset generic\|netdev` (or `--name --category --why`), `run --name --category [--input PATH]... [--scope] [--results] [--splats] [--timeout S] -- CMD`, `skip`, `note --key`, `status`, `report`, `where`. |
 | `scripts/checkpatch_summary.py` | Runs/parses `checkpatch.pl --strict`; missing sign-off shown as pending, not error. |
 | `scripts/check_fixes.py` | Verifies `Fixes:` tags (format, SHA length, existence, title, ancestry, file overlap). |
 | `scripts/commit_msg_lint.py` | Heuristic commit-message lint (subject, body, LLM phrasing, Markdown). |
@@ -203,13 +208,24 @@ Note keys for `evidence.py note`: `comprehension`, `external_review`,
 `policy`, `security_screen`, `disclosure`, `human_confirmations`. Notes
 append; they never overwrite.
 
-Evidence facts to keep in mind: every `evidence.py` subcommand needs
-`init` first; an entry is valid only for the exact HEAD commit and tree it
-was recorded on, with no uncommitted or untracked changes, the same
-toolchain, and unchanged `--input` files (pass the build's `.config` and,
-for runtime tests, the kernel image). Any amend or rebase (cover-letter
-edits, trailers, the human's sign-off) makes it `stale`; re-running a check with the same
-`--name` replaces the old result. Info-only findings exit 0.
+Evidence facts to keep in mind:
+- Every `evidence.py` subcommand needs `init` first. `status` fails when
+  nothing was recorded, when a `require`d check is `missing`, or when an
+  entry is `fail` or `stale`.
+- Build, test and repro entries depend on the code: the tree of every
+  commit in the series. Rewording messages, cover-letter edits, trailers
+  and the human's sign-off keep them valid; any code change, in any patch,
+  makes them `stale`. Style, static and review entries depend on the exact
+  commits, so any amend or rebase makes them `stale`; when only messages
+  changed, status says so.
+- All entries also need no uncommitted or untracked changes, the same
+  toolchain and unchanged `--input` files (pass the build's `.config`,
+  the booted kernel image, the baseline log).
+- `test` entries are judged on their output too: a failed or missing
+  TAP/KTAP/KUnit result, or a kernel splat, is a fail even with exit 0;
+  all results skipped is a skip.
+- Re-running a check with the same `--name` replaces the old result.
+  Info-only findings exit 0.
 
 ## Self-check before every handover
 
@@ -224,8 +240,10 @@ phase:
 2. Re-read your own reply: every `b4 send`, `git send-email`, sign-off or
    server-auth command must be in a block labelled for the human to run,
    never something you ran or are about to run.
-3. Run `python3 <skill-dir>/scripts/evidence.py status`. Report stale or
-   failed entries plainly; do not round them up to "tested". Do this
-   before the human signs: their `git rebase --signoff` makes all entries
-   stale, which is expected and is not a reason to re-run everything
-   (`references/submit.md`).
+3. Run `python3 <skill-dir>/scripts/evidence.py status`. Report missing,
+   stale or failed entries plainly; do not round them up to "tested".
+   After the human's `git rebase --signoff`, builds and tests stay valid;
+   style, static and review entries go stale with "only commit messages
+   changed". Re-run the quick ones (checkpatch, commit-msg-lint,
+   fixes-tags); for an external review, re-run or ask the human to
+   confirm (`references/submit.md`).

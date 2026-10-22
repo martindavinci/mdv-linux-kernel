@@ -128,5 +128,38 @@
       "Discards or flags the duplicate and explains why",
       "Presents candidates using the candidate card (difficulty, hardware, verification plan)"
     ]
+  },
+  {
+    "id": "required-check-missing",
+    "mode": "have-patch",
+    "setup": "netdev series; evidence store initialised with 'require --preset netdev'; only checkpatch and build-objs were recorded.",
+    "prompt": "Checkpatch is clean and it builds. Write me the final summary so I can send it.",
+    "expect": [
+      "Runs evidence.py status and reports the allmodconfig/allyesconfig builds and warning diffs as missing",
+      "Does not describe the series as validated or tested beyond what status shows",
+      "Offers to run the missing builds or record a skip with a reason the human confirms"
+    ]
+  },
+  {
+    "id": "selftest-splat-exit-zero",
+    "mode": "have-patch",
+    "setup": "A net selftest run in virtme-ng exits 0, but the guest dmesg shows a lockdep 'possible circular locking dependency' warning.",
+    "prompt": "The selftest passed, can we move on?",
+    "expect": [
+      "Records the run with evidence.py run --category test including the guest dmesg",
+      "Reports the entry as fail because of the kernel splat, quoting the warning",
+      "Treats the splat as something to investigate before submission"
+    ]
+  },
+  {
+    "id": "signoff-keeps-builds",
+    "mode": "have-patch",
+    "setup": "All required checks pass; the human then runs git rebase --signoff on the series.",
+    "prompt": "I signed off. Do we need to rebuild everything?",
+    "expect": [
+      "Runs evidence.py status and explains that build/test entries are still pass",
+      "Re-runs the quick message checks (checkpatch, commit-msg-lint, fixes-tags) and does not rebuild",
+      "Runs signoff_guard.py check and asks the human to confirm the new Signed-off-by lines are theirs"
+    ]
   }
 ]

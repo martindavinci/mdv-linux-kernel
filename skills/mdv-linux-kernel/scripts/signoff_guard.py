@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0
 """Guard against Signed-off-by lines the agent must never add.
 
-  signoff_guard.py snapshot <rev-range> [--repo DIR]
-  signoff_guard.py check <rev-range> [--repo DIR] [--json]
+  signoff_guard.py snapshot <rev-range> [--repo DIR] [--series NAME]
+  signoff_guard.py check <rev-range> [--repo DIR] [--series NAME] [--json]
 
 'snapshot' records the Signed-off-by values present before the agent starts
 editing, for the series and per patch (by subject). 'check' flags:
@@ -15,6 +15,8 @@ editing, for the series and per patch (by subject). 'check' flags:
   AI_IDENTITY (error)    a SoB / Co-developed-by that looks like an AI;
   NO_SNAPSHOT (warn).
 Snapshots from older versions (series list only) get the series check only.
+The snapshot is per series (<state dir>/series/<series>/), like the evidence
+store: --series, else $MLK_SERIES, else the current branch.
 Exit: 0 no findings, 1 findings, 2 usage or git error.
 """
 from __future__ import annotations
@@ -56,11 +58,11 @@ def looks_like_ai_identity(value: str) -> bool:
     return any(r.search(lowered) for r in AI_RES)
 
 
-def snapshot_path(repo: str) -> str:
-    return os.path.join(mlk_common.state_dir(repo), SNAPSHOT_NAME)
+def snapshot_path(repo: str, series: str | None = None) -> str:
+    return os.path.join(mlk_common.series_dir(repo, series), SNAPSHOT_NAME)
 
 
-def take_snapshot(repo: str, rev_range: str) -> dict:
+def take_snapshot(repo: str, rev_range: str, series: str | None = None) -> dict:
     sobs: list[str] = []
     commits = []
     for sha in mlk_common.commits_in_range(repo, rev_range):
@@ -70,14 +72,14 @@ def take_snapshot(repo: str, rev_range: str) -> dict:
         commits.append({"subject": mlk_common.split_message(message)[0], "sob": values})
     data = {"created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "range": rev_range, "sob": sorted(sobs), "commits": commits}
-    with open(snapshot_path(repo), "w", encoding="utf-8", newline="\n") as f:
+    with open(snapshot_path(repo, series), "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
     return data
 
 
-def load_snapshot(repo: str) -> dict | None:
-    path = snapshot_path(repo)
+def load_snapshot(repo: str, series: str | None = None) -> dict | None:
+    path = snapshot_path(repo, series)
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as f:
@@ -91,9 +93,9 @@ def _sob_added(sha: str, value: str, why: str) -> Finding:
                    commit=sha, detail=f"Signed-off-by: {value}")
 
 
-def check(repo: str, rev_range: str) -> list[Finding]:
+def check(repo: str, rev_range: str, series: str | None = None) -> list[Finding]:
     findings: list[Finding] = []
-    snap = load_snapshot(repo)
+    snap = load_snapshot(repo, series)
     allowed: Counter | None = None
     by_subject: dict[str, list[dict]] | None = None
     if snap is None:
@@ -154,17 +156,18 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("rev_range")
         p.add_argument("--repo", default=".")
+        p.add_argument("--series", help="series name (default: $MLK_SERIES, else the branch)")
         if name == "check":
             p.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     try:
         repo = mlk_common.repo_root(args.repo)
         if args.command == "snapshot":
-            data = take_snapshot(repo, args.rev_range)
+            data = take_snapshot(repo, args.rev_range, args.series)
             print(f"sign-off snapshot of {args.rev_range}: {len(data['sob'])} Signed-off-by "
-                  f"line(s) recorded in {snapshot_path(repo)}")
+                  f"line(s) recorded in {snapshot_path(repo, args.series)}")
             return mlk_common.EXIT_OK
-        findings = check(repo, args.rev_range)
+        findings = check(repo, args.rev_range, args.series)
     except (mlk_common.GitError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return mlk_common.EXIT_USAGE
