@@ -480,6 +480,7 @@ def cmd_run(store: Store, args) -> int:
             entry.update(status="fail", reason=reason)
         elif verdict == "skip" and entry["status"] == "pass":
             entry.update(status="skip", reason=reason)
+    entry["log_sha256"] = file_sha256(log_path)  # lets an audit spot an edited log
     # Reload after the command: other evidence.py calls may have written meanwhile.
     store.update(lambda d: d["entries"].append(entry))
     shown = entry["status"].upper() if entry["status"] != "pass" else "pass"

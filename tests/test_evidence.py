@@ -84,6 +84,12 @@ class EvidenceTest(EvidenceBase):
             self.assertIn("hello evidence", f.read())
         self.assertTrue(ok["log"].startswith(mlk_common.series_dir(self.repo.path)))
 
+    def test_run_records_log_hash(self):
+        self.ev("run", "--name", "ok", "--category", "build", "--", *PASS_CMD)
+        entry = self.store()["entries"][0]
+        self.assertRegex(entry["log_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(entry["log_sha256"], evidence.file_sha256(entry["log"]))
+
     def test_entry_stale_after_amend(self):
         self.ev("run", "--name", "ok", "--category", "style", "--", *PASS_CMD)
         self.assertEqual(self.status()[0], 0)
