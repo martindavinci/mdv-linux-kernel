@@ -156,6 +156,8 @@ submission endpoints blocked.
   test hardware.
 - More agents tested (Gemini CLI, Copilot CLI); macOS through a Linux VM.
 
-## License
+## Author and license
+
+Copyright (C) 2026 Martin DaVinci <martindavinci@users.noreply.github.com>
 
 GPL-2.0. See [`LICENSE`](LICENSE).

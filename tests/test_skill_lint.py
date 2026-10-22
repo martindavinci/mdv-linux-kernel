@@ -57,6 +57,15 @@ class SkillLintTest(unittest.TestCase):
         self.assertLessEqual(len(desc), 1024)
         self.assertIn("kernel", desc)
 
+    def test_frontmatter_license_and_author(self):
+        text = read(SKILL_MD)
+        fm = frontmatter(text)
+        self.assertEqual(fm.get("license"), "GPL-2.0")
+        block = re.match(r"---\n(.*?)\n---\n", text, re.S).group(1)
+        self.assertIn("metadata:\n  author: Martin DaVinci <martindavinci@users.noreply.github.com>",
+                      block)
+        self.assertRegex(block, r'\n  version: "\d+\.\d+\.\d+"')
+
     def test_skill_md_length(self):
         self.assertLessEqual(len(read(SKILL_MD).splitlines()), 500)
 
