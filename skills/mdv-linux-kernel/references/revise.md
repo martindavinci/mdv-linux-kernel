@@ -23,8 +23,10 @@ get discouraged - or impatient" in `submitting-patches.rst`, and for netdev
   `Signed-off-by`, so it is not something you run. It matches by
   patch-id, so it should run before code changes; after changes see
   `--fuzzy` in the b4 docs. Afterwards, run `signoff_guard.py check`,
-  show the human any new `Signed-off-by`/`Co-developed-by`, and once they
-  confirm, take a fresh `signoff_guard.py snapshot "$BASE..HEAD"`.
+  show the human any new `Signed-off-by`/`Co-developed-by` and every
+  `ATTESTATION_ADDED` (`Reviewed-by`/`Tested-by`/`Acked-by`): each must
+  match a tag that person really gave on the list, for this version. Once
+  they confirm, take a fresh `signoff_guard.py snapshot "$BASE..HEAD"`.
 
 ## 2. Map every comment
 

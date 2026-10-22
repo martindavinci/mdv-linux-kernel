@@ -46,6 +46,14 @@ Warn (warn + confirm) and steer away from:
   are not discouraged there.
 - **drive-by patches on old, unmaintained code** (old drivers, obsolete
   protocols): little value, hard to test, often no one to review.
+- **`drivers/staging/` with AI help**: since 2026-08-03 the staging
+  maintainer automatically rejects patches generated with an LLM; the only
+  exception is an LLM-found or LLM-fixed issue that was tested on the
+  actual hardware, with the testing described ("LLM policy for
+  drivers/staging/ going forward", Greg Kroah-Hartman, LKML). Old guides
+  that send newcomers to staging cleanups predate this. Subsystem policies
+  can live in list announcements, not only in `Documentation/`: check the
+  subsystem's list before choosing work there.
 - **"theoretical" fixes** without a demonstrated problem: maintainers spend
   time disproving them.
 - **anything requiring hardware the human lacks**, unless the change is
