@@ -43,8 +43,11 @@ missing understanding. This skill attacks those two things.
 ### Rules the skill never breaks
 
 - The agent never adds `Signed-off-by`. Only the human can certify the DCO.
-- The agent never sends anything: no `b4 send` (including `--reflect`) and no
-  `git send-email`.
+- The agent never sends anything: no `b4 send` in any form (including
+  `--reflect`, `--dry-run`, `-o`, `--preview-to`, `--web-auth-*`), no
+  `git send-email`, no mail, list or patchwork submission.
+- The human runs anything that authenticates to or sends through an external
+  server.
 
 Every other failed check is a warning that needs the human's explicit
 confirmation to proceed.
@@ -54,7 +57,7 @@ confirmation to proceed.
 If a patch looks like a security fix, the skill stops ordinary preparation and
 external reviews and keeps the reproducer out of public text. It then explains
 the rules that apply, as written in `Documentation/process/security-bugs.rst`
-and the netdev guidance. Preparing security reports is out of scope for v1.
+and the netdev guidance. It does not prepare security reports yet.
 
 ### Privacy
 
@@ -65,7 +68,7 @@ skill tells you this before running them.
 ## Prerequisites
 
 The skill runs inside Linux. Supported: **WSL2 on Windows** and **native Linux**.
-macOS is not supported in v1; use a Linux VM.
+macOS is not supported yet; use a Linux VM.
 
 ### Windows (WSL2)
 
@@ -84,7 +87,7 @@ Install Claude Code or Codex and log in. The skill's setup phase handles the res
 ## Install
 
 ```sh
-git clone <this repository> ~/src/mdv-linux-kernel
+git clone https://github.com/martindavinci/mdv-linux-kernel ~/src/mdv-linux-kernel
 cd ~/src/mdv-linux-kernel
 ./install.sh            # both agents, as symlinks (git pull updates the skill)
 ```
@@ -102,7 +105,16 @@ The skill is installed per user, never inside the kernel tree.
 
 ## Usage
 
-Start your agent inside a kernel checkout and talk normally. For example:
+Start your agent inside a kernel checkout. The skill loads by itself when
+you talk about kernel patches, b4, checkpatch, netdev or `Signed-off-by`; you
+can also call it by name:
+
+| Agent | Call it with |
+|---|---|
+| Claude Code | `/mdv-linux-kernel` |
+| Codex | `$mdv-linux-kernel` |
+
+Then talk normally. For example:
 
 - "I've never contributed to the kernel. Set me up for netdev."
 - "Find me a good first bug in networking."
@@ -113,6 +125,38 @@ Start your agent inside a kernel checkout and talk normally. For example:
 
 The skill talks to you in your language. Everything that goes upstream
 (changelogs, cover letters, replies) is written in English.
+
+### What the evidence looks like
+
+Every check runs through `evidence.py`, which records it against the exact
+code. `evidence.py status`, from a toy repository (not a kernel tree):
+
+```
+series b4/foo-fix: HEAD dd22c241a699, base bd5ddc841605
+  PASS    checkpatch [style]
+  PASS    build-objs [build]
+  FAIL    selftest-foo [test] - 1 test result(s) failed
+  SKIP    smatch [static] - not installed
+  MISSING commit-msg-lint [style] - required: changelog checks
+2 check(s) failed, stale or missing: fix and (re-)run them.
+```
+
+The test exited 0 but printed a TAP `not ok`, so it is a failure; a required
+check that never ran is `missing`; a skip keeps its reason. The skill only
+calls a series tested when this says so, and the human confirms every skip.
+
+## What it does not cover (yet)
+
+- Subsystems other than netdev in depth: elsewhere it applies the generic
+  rules plus the tree's `MAINTAINERS` entry and `maintainer-*.rst`.
+- Preparing private security reports (it stops and explains the rules).
+- Contributions other than your own patches: reporting bugs, reviewing or
+  testing other people's patches, stable backports.
+- Large work: new drivers, uAPI and netlink spec changes, device tree
+  bindings.
+- macOS and native Windows (use WSL2 or a Linux VM).
+
+See the roadmap below.
 
 ## Helper scripts
 
@@ -130,6 +174,16 @@ Reporting commands support `--json` (`evidence.py status`, the checkers,
 | `check_fixes.py` | verifies `Fixes:` tags (format, SHA, title, ancestry) |
 | `build_warnings.py` | new warnings compared with a baseline build, ignoring line-number shifts |
 | `signoff_guard.py` | flags sign-offs added after the agent started (series-wide and per patch, snapshot per series) and AI identities in trailers |
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `skills/mdv-linux-kernel/` | the skill: `SKILL.md`, `references/` (loaded on demand), `scripts/` |
+| `install.sh` | per-user install for Claude Code and Codex |
+| `evals/` | scenarios, historical dataset, eval tools, smoke test, field verification protocol |
+| `tests/` | unit tests for the scripts and the eval tools |
+| `CHANGELOG.md` | what changed in each version |
 
 ## Development
 
@@ -155,6 +209,11 @@ submission endpoints blocked.
 - In-depth support for one more subsystem, chosen by demand and available
   test hardware.
 - More agents tested (Gemini CLI, Copilot CLI); macOS through a Linux VM.
+
+## Versions
+
+Releases are git tags (`v0.1.0`, `v0.2.0`, ...); see [`CHANGELOG.md`](CHANGELOG.md).
+The skill's version is also in the `metadata` of `SKILL.md`.
 
 ## Author and license
 

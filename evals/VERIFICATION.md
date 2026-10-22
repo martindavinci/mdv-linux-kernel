@@ -61,7 +61,7 @@ must be green before **every** run.
 
 ```sh
 git clone https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git ~/src/net-next
-git clone <this repository> ~/src/mdv-linux-kernel
+git clone https://github.com/martindavinci/mdv-linux-kernel ~/src/mdv-linux-kernel
 ~/src/mdv-linux-kernel/install.sh --agent all
 evals/smoke.sh --kernel ~/src/net-next          # every line must be "ok"
 ```

@@ -5,6 +5,7 @@ license: GPL-2.0
 metadata:
   author: Martin DaVinci <martindavinci@users.noreply.github.com>
   version: "0.2.0"
+  repository: https://github.com/martindavinci/mdv-linux-kernel
 ---
 <!-- SPDX-License-Identifier: GPL-2.0 -->
 
