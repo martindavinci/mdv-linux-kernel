@@ -1,0 +1,285 @@
+[
+  {
+    "id": "net-pppoe-session-hash-pointer-match",
+    "kind": "accepted-fix",
+    "split": "dev",
+    "tree": "net",
+    "base": null,
+    "commit": "b5b8c81836e2bec7b444dfa2b14fd14e912e9d63",
+    "subject": "pppoe: delete session hash entries by pointer match",
+    "patch": "20261020092118.47416-1-qingfang.deng@linux.dev",
+    "lore": "https://lore.kernel.org/r/20261020092118.47416-1-qingfang.deng@linux.dev",
+    "fixes": "Fixes: 1da177e4c3f4 (\"Linux-2.6.12-rc2\")",
+    "expected": {
+      "must_fire": [],
+      "must_not_error": true
+    },
+    "rationale": {
+      "quote": "This patch was applied to netdev/net.git (main)\nby Jakub Kicinski <kuba@kernel.org>",
+      "url": "https://lore.kernel.org/r/179262901348.1378903.6285875327252867524.git-patchwork-notify@kernel.org",
+      "author": "patchwork-bot"
+    },
+    "notes": "Fixes: points at the initial git import; Cc: stable; the author said in the thread the bug was found by an LLM while generating selftests.",
+    "provenance": {
+      "retrieved": "2026-10-22",
+      "via": "patchwork-api",
+      "sources": [
+        "https://patchwork.kernel.org/api/1.3/patches/?project=netdevbpf&state=accepted&order=-date&per_page=100&q=net",
+        "https://patchwork.kernel.org/api/1.3/patches/14902152/",
+        "https://patchwork.kernel.org/api/1.3/patches/14902152/comments/"
+      ],
+      "verified_web": "2026-10-22",
+      "verified_tree": null,
+      "note": "Facts read from the patchwork REST API (patch and comment JSON) on the retrieval date; lore.kernel.org and git.kernel.org refused automated fetches, so lore URLs are patchwork's list_archive_url and the commit SHA is patchwork's commit_ref."
+    }
+  },
+  {
+    "id": "net-virtio-net-rx-mode-work",
+    "kind": "accepted-fix",
+    "split": "heldout",
+    "tree": "net",
+    "base": null,
+    "commit": "1234707482053f1d1ac7c5756207d2c29057974c",
+    "subject": "virtio_net: atomically disable rx mode work",
+    "patch": "20261017114237.2786302-2-bestswngs@gmail.com",
+    "lore": "https://lore.kernel.org/r/20261017114237.2786302-2-bestswngs@gmail.com",
+    "fixes": "Fixes: b9f7425239a0 (\"virtio-net: convert rx mode setting to use workqueue\")",
+    "expected": {
+      "must_fire": [],
+      "must_not_error": true
+    },
+    "rationale": {
+      "quote": "This patch was applied to netdev/net.git (main)\nby Paolo Abeni <pabeni@redhat.com>",
+      "url": "https://lore.kernel.org/r/179258160503.565300.13046039788150219852.git-patchwork-notify@kernel.org",
+      "author": "patchwork-bot"
+    },
+    "notes": "KASAN splat in the changelog, Reported-by, Cc: stable.",
+    "provenance": {
+      "retrieved": "2026-10-22",
+      "via": "patchwork-api",
+      "sources": [
+        "https://patchwork.kernel.org/api/1.3/patches/?project=netdevbpf&state=accepted&order=-date&per_page=100&q=net",
+        "https://patchwork.kernel.org/api/1.3/patches/14896790/",
+        "https://patchwork.kernel.org/api/1.3/patches/14896790/comments/"
+      ],
+      "verified_web": "2026-10-22",
+      "verified_tree": null,
+      "note": "Facts read from the patchwork REST API (patch and comment JSON) on the retrieval date; lore.kernel.org and git.kernel.org refused automated fetches, so lore URLs are patchwork's list_archive_url and the commit SHA is patchwork's commit_ref."
+    }
+  },
+  {
+    "id": "net-mlx5e-ringparam-features",
+    "kind": "accepted-fix",
+    "split": "dev",
+    "tree": "net",
+    "base": null,
+    "commit": "23dd5be7e19ceab8c1c79110ee3552bcabc463ef",
+    "subject": "net/mlx5e: Update netdev features only after a successful ringparam set",
+    "patch": "20261017005401.1582755-1-dimitri.daskalakis1@gmail.com",
+    "lore": "https://lore.kernel.org/r/20261017005401.1582755-1-dimitri.daskalakis1@gmail.com",
+    "fixes": "Fixes: 46bcce5dfd33 (\"net/mlx5e: Support ethtool tcp-data-split settings\")",
+    "expected": {
+      "must_fire": [],
+      "must_not_error": true
+    },
+    "rationale": {
+      "quote": "This patch was applied to netdev/net.git (main)\nby Jakub Kicinski <kuba@kernel.org>",
+      "url": "https://lore.kernel.org/r/179253002202.208021.1423217243586983766.git-patchwork-notify@kernel.org",
+      "author": "patchwork-bot"
+    },
+    "notes": "Reported-by and Closes: link; the body starts with a From: line because it was sent from a different address than the Signed-off-by.",
+    "provenance": {
+      "retrieved": "2026-10-22",
+      "via": "patchwork-api",
+      "sources": [
+        "https://patchwork.kernel.org/api/1.3/patches/?project=netdevbpf&state=accepted&order=-date&per_page=100&q=net",
+        "https://patchwork.kernel.org/api/1.3/patches/14896263/",
+        "https://patchwork.kernel.org/api/1.3/patches/14896263/comments/"
+      ],
+      "verified_web": "2026-10-22",
+      "verified_tree": null,
+      "note": "Facts read from the patchwork REST API (patch and comment JSON) on the retrieval date; lore.kernel.org and git.kernel.org refused automated fetches, so lore URLs are patchwork's list_archive_url and the commit SHA is patchwork's commit_ref."
+    }
+  },
+  {
+    "id": "net-hibmcge-netdev-ops-null-deref",
+    "kind": "accepted-fix",
+    "split": "heldout",
+    "tree": "net",
+    "base": null,
+    "commit": "9b8ae9aaa1b8e2b6c1cbf5613d3a37923cf53bc5",
+    "subject": "net: hibmcge: set netdev_ops before hbg_init() to fix NULL pointer dereference",
+    "patch": "20261016110421.2288670-1-shaojijie@huawei.com",
+    "lore": "https://lore.kernel.org/r/20261016110421.2288670-1-shaojijie@huawei.com",
+    "fixes": "Fixes: ff4edac6e9bd (\"net: hibmcge: Implement some .ndo functions\")",
+    "expected": {
+      "must_fire": [],
+      "must_not_error": true
+    },
+    "rationale": {
+      "quote": "This patch was applied to netdev/net.git (main)\nby Jakub Kicinski <kuba@kernel.org>",
+      "url": "https://lore.kernel.org/r/179262901677.1378903.766655502279729876.git-patchwork-notify@kernel.org",
+      "author": "patchwork-bot"
+    },
+    "notes": "Single Fixes:, no Cc: stable; the author is a regular contributor to this driver.",
+    "provenance": {
+      "retrieved": "2026-10-22",
+      "via": "patchwork-api",
+      "sources": [
+        "https://patchwork.kernel.org/api/1.3/patches/?project=netdevbpf&state=accepted&order=-date&per_page=100&q=net",
+        "https://patchwork.kernel.org/api/1.3/patches/14894468/",
+        "https://patchwork.kernel.org/api/1.3/patches/14894468/comments/"
+      ],
+      "verified_web": "2026-10-22",
+      "verified_tree": null,
+      "note": "Facts read from the patchwork REST API (patch and comment JSON) on the retrieval date; lore.kernel.org and git.kernel.org refused automated fetches, so lore URLs are patchwork's list_archive_url and the commit SHA is patchwork's commit_ref."
+    }
+  },
+  {
+    "id": "rej-qrtr-checkpatch-style",
+    "kind": "rejected",
+    "split": "dev",
+    "tree": "net-next",
+    "base": null,
+    "commit": null,
+    "subject": "net: qrtr: fix coding style issues flagged by checkpatch",
+    "patch": "20260913180342.8948-2-muralikrishna2444b@gmail.com",
+    "lore": "https://lore.kernel.org/r/20260913180342.8948-2-muralikrishna2444b@gmail.com",
+    "fixes": null,
+    "expected": {
+      "must_fire": [
+        "standalone-cleanup",
+        "tree-choice"
+      ],
+      "must_not_error": false
+    },
+    "rationale": {
+      "quote": "You seem to have ignored all the automated messages telling you to slow\ndown. And we do not accept checkpatch fixes, please see below.",
+      "url": "https://lore.kernel.org/r/20260914163658.13cff637@kernel.org",
+      "author": "Jakub Kicinski"
+    },
+    "notes": "Posted as [PATCH 1/1] with no net/net-next tree in the subject prefix.",
+    "provenance": {
+      "retrieved": "2026-10-22",
+      "via": "patchwork-api",
+      "sources": [
+        "https://patchwork.kernel.org/api/1.3/patches/?project=netdevbpf&state=rejected&order=-date&per_page=100&page=2",
+        "https://patchwork.kernel.org/api/1.3/patches/14811659/",
+        "https://patchwork.kernel.org/api/1.3/patches/14811659/comments/"
+      ],
+      "verified_web": "2026-10-22",
+      "verified_tree": null,
+      "note": "Facts read from the patchwork REST API (patch and comment JSON) on the retrieval date; lore.kernel.org and git.kernel.org refused automated fetches, so lore URLs are patchwork's list_archive_url and the commit SHA is patchwork's commit_ref."
+    }
+  },
+  {
+    "id": "rej-ipv4-inetdev-null-no-fixes",
+    "kind": "rejected",
+    "split": "heldout",
+    "tree": "net",
+    "base": null,
+    "commit": null,
+    "subject": "ipv4: guard inetdev_event() against a NULL from inetdev_init()",
+    "patch": "20260921155522.679350-3-yunseong.kim@est.tech",
+    "lore": "https://lore.kernel.org/r/20260921155522.679350-3-yunseong.kim@est.tech",
+    "fixes": null,
+    "expected": {
+      "must_fire": [
+        "unverified-claim",
+        "missing-fixes"
+      ],
+      "must_not_error": false
+    },
+    "rationale": {
+      "quote": "Please do not send patches for bugs that can not happen, especially\nwith a Cc: stable and no Fixes: tag.",
+      "url": "https://lore.kernel.org/r/CANn89iLpT1hqqNS2vWM1xL_Y-Eqpj5UBxjJwyfVc5JuFhSZcjg@mail.gmail.com",
+      "author": "Eric Dumazet"
+    },
+    "notes": "The same reply also says: 'If you used an LLM to generate this, please verify the claim before sending.' Tree inferred from the Cc: stable intent; the subject has no tree prefix.",
+    "provenance": {
+      "retrieved": "2026-10-22",
+      "via": "patchwork-api",
+      "sources": [
+        "https://patchwork.kernel.org/api/1.3/patches/?project=netdevbpf&state=rejected&order=-date&per_page=100&page=2",
+        "https://patchwork.kernel.org/api/1.3/patches/14835716/",
+        "https://patchwork.kernel.org/api/1.3/patches/14835716/comments/"
+      ],
+      "verified_web": "2026-10-22",
+      "verified_tree": null,
+      "note": "Facts read from the patchwork REST API (patch and comment JSON) on the retrieval date; lore.kernel.org and git.kernel.org refused automated fetches, so lore URLs are patchwork's list_archive_url and the commit SHA is patchwork's commit_ref."
+    }
+  },
+  {
+    "id": "rej-dsa-microchip-perout-wrong-tree",
+    "kind": "rejected",
+    "split": "heldout",
+    "tree": "net",
+    "base": null,
+    "commit": null,
+    "subject": "net: dsa: microchip: save the periodic output request",
+    "patch": "20260917-fix-perout-v2-1-d8acf3eea6f7@bootlin.com",
+    "lore": "https://lore.kernel.org/r/20260917-fix-perout-v2-1-d8acf3eea6f7@bootlin.com",
+    "fixes": "Fixes: 1f12ae5b6760 (\"net: dsa: microchip: ptp: add periodic output signal\")",
+    "expected": {
+      "must_fire": [
+        "tree-choice"
+      ],
+      "must_not_error": false
+    },
+    "rationale": {
+      "quote": "- net\n- Fixes\n+ net-next\n+ better commit msg explaining the state of things\n\n?",
+      "url": "https://lore.kernel.org/r/20260924080252.2169c100@kernel.org",
+      "author": "Jakub Kicinski"
+    },
+    "notes": "v2. The issue was only latent in the vanilla tree: target net-next and drop the Fixes: tag.",
+    "provenance": {
+      "retrieved": "2026-10-22",
+      "via": "patchwork-api",
+      "sources": [
+        "https://patchwork.kernel.org/api/1.3/patches/?project=netdevbpf&state=rejected&order=-date&per_page=100&page=2",
+        "https://patchwork.kernel.org/api/1.3/patches/14824530/",
+        "https://patchwork.kernel.org/api/1.3/patches/14824530/comments/"
+      ],
+      "verified_web": "2026-10-22",
+      "verified_tree": null,
+      "note": "Facts read from the patchwork REST API (patch and comment JSON) on the retrieval date; lore.kernel.org and git.kernel.org refused automated fetches, so lore URLs are patchwork's list_archive_url and the commit SHA is patchwork's commit_ref."
+    }
+  },
+  {
+    "id": "rej-sundance-llm-ancient-hw",
+    "kind": "rejected",
+    "split": "dev",
+    "tree": "net",
+    "base": null,
+    "commit": null,
+    "subject": "net: sundance: fix sign extension of the octet counters",
+    "patch": "20261020234434.318-1-rand.sec96@gmail.com",
+    "lore": "https://lore.kernel.org/r/20261020234434.318-1-rand.sec96@gmail.com",
+    "fixes": "Fixes: 1da177e4c3f4 (\"Linux-2.6.12-rc2\")",
+    "expected": {
+      "must_fire": [
+        "untested-hardware",
+        "llm-style"
+      ],
+      "must_not_error": false
+    },
+    "rationale": {
+      "quote": "We don't take LLM slop fixes for ancient hw",
+      "url": "https://lore.kernel.org/r/20261020181122.53fd0c79@kernel.org",
+      "author": "Jakub Kicinski"
+    },
+    "notes": "Fix for legacy hardware with no sign it was tested on a device.",
+    "provenance": {
+      "retrieved": "2026-10-22",
+      "via": "patchwork-api",
+      "sources": [
+        "https://patchwork.kernel.org/api/1.3/patches/?project=netdevbpf&state=rejected&order=-date&per_page=100&page=1",
+        "https://patchwork.kernel.org/api/1.3/patches/14903845/",
+        "https://patchwork.kernel.org/api/1.3/patches/14903845/comments/"
+      ],
+      "verified_web": "2026-10-22",
+      "verified_tree": null,
+      "note": "Facts read from the patchwork REST API (patch and comment JSON) on the retrieval date; lore.kernel.org and git.kernel.org refused automated fetches, so lore URLs are patchwork's list_archive_url and the commit SHA is patchwork's commit_ref."
+    }
+  }
+]
