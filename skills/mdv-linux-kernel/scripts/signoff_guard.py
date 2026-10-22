@@ -13,6 +13,10 @@ editing, for the series and per patch (by subject). 'check' flags:
   SOB_UNVERIFIED (warn)  a patch not in the snapshot carries a SoB: the human
                          must confirm they added it;
   AI_IDENTITY (error)    a SoB / Co-developed-by that looks like an AI;
+  ATTESTATION_ADDED (error)  a Reviewed-by/Tested-by/Acked-by on a snapshot
+                         patch that it did not have: only the person named
+                         gives it, and the human adds it;
+  ATTESTATION_UNVERIFIED (warn)  one on a patch not in the snapshot;
   NO_SNAPSHOT (warn).
 Snapshots from older versions (series list only) get the series check only.
 The snapshot is per series (<state dir>/series/<series>/), like the evidence
@@ -33,6 +37,7 @@ import mlk_common
 from mlk_common import Finding
 
 SNAPSHOT_NAME = "signoff-snapshot.json"
+ATTEST_KEYS = ("reviewed-by", "tested-by", "acked-by")
 AI_MARKERS = ["claude", "anthropic", "openai", "chatgpt", "codex", "gpt-", "gemini",
               "copilot", "llm", "ai assistant", "noreply@anthropic.com"]
 
@@ -53,6 +58,12 @@ def sob_values(message: str) -> list[str]:
             if key.lower() == "signed-off-by"]
 
 
+def attest_values(message: str) -> list[str]:
+    """Reviewed-by/Tested-by/Acked-by trailers, as "key: value" with the key lowercased."""
+    return [f"{key.lower()}: {' '.join(value.split())}" for key, value in mlk_common.trailers(message)
+            if key.lower() in ATTEST_KEYS]
+
+
 def looks_like_ai_identity(value: str) -> bool:
     lowered = value.lower()
     return any(r.search(lowered) for r in AI_RES)
@@ -69,7 +80,8 @@ def take_snapshot(repo: str, rev_range: str, series: str | None = None) -> dict:
         message = mlk_common.commit_message(repo, sha)
         values = sob_values(message)
         sobs.extend(values)
-        commits.append({"subject": mlk_common.split_message(message)[0], "sob": values})
+        commits.append({"subject": mlk_common.split_message(message)[0], "sob": values,
+                        "attest": attest_values(message)})
     data = {"created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "range": rev_range, "sob": sorted(sobs), "commits": commits}
     with open(snapshot_path(repo, series), "w", encoding="utf-8", newline="\n") as f:
@@ -133,15 +145,31 @@ def check(repo: str, rev_range: str, series: str | None = None) -> list[Finding]
         # Per patch: a SoB moved between patches keeps the series count unchanged.
         records = by_subject.get(mlk_common.split_message(message)[0])
         remaining = Counter(values) - flagged
+        attest = Counter(attest_values(message))
         if records:
             record = records.pop(0)
             for value in (remaining - Counter(record["sob"])).elements():
                 findings.append(_sob_added(sha, value, "not present on this patch in the snapshot"))
-        elif remaining:
-            findings.append(Finding(
-                "SOB_UNVERIFIED", "warn",
-                "commit not in snapshot carries Signed-off-by; human must confirm they added it",
-                commit=sha, detail="; ".join(f"Signed-off-by: {v}" for v in remaining.elements())))
+            if "attest" in record:  # snapshots before 0.3.0 did not record them
+                for value in (attest - Counter(record["attest"])).elements():
+                    findings.append(Finding(
+                        "ATTESTATION_ADDED", "error",
+                        "attestation trailer added after the snapshot; only the person named "
+                        "may give it, and only the human adds it (git am / b4 trailers -u)",
+                        commit=sha, detail=value))
+        else:
+            if remaining:
+                findings.append(Finding(
+                    "SOB_UNVERIFIED", "warn",
+                    "commit not in snapshot carries Signed-off-by; human must confirm they added it",
+                    commit=sha,
+                    detail="; ".join(f"Signed-off-by: {v}" for v in remaining.elements())))
+            if attest:
+                findings.append(Finding(
+                    "ATTESTATION_UNVERIFIED", "warn",
+                    "commit not in snapshot carries Reviewed-by/Tested-by/Acked-by; the human "
+                    "must confirm each was given by that person on the list",
+                    commit=sha, detail="; ".join(attest.elements())))
     return findings
 
 

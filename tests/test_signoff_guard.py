@@ -76,6 +76,38 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(data["range"], f"{self.base}..HEAD")
         self.assertIn("created", data)
 
+    def test_attestation_added_after_snapshot(self):
+        reviewed = "Reviewed-by: Some Reviewer <r@example.org>"
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{reviewed}\n{HUMAN_SOB}\n",
+                         {"net/foo.c": "int foo = 1;\n"})
+        self.snapshot()
+        self.assertEqual(self.check(), (0, []))  # existing Reviewed-by and SoB are kept
+        self.repo.git("commit", "--amend", "-q", "-m",
+                      f"net: foo: fix\n\nBody.\n\n{reviewed}\n"
+                      "Tested-by: Someone Else <t@example.org>\n" + HUMAN_SOB)
+        self.assertEqual(self.check(), (1, ["ATTESTATION_ADDED"]))
+
+    def test_attestation_on_new_patch_unverified(self):
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n", {"net/foo.c": "int foo = 1;\n"})
+        self.snapshot()
+        self.repo.commit("net: foo: second\n\nBody.\n\nAcked-by: A Maintainer <m@example.org>\n",
+                         {"net/foo.c": "int foo = 2;\n"})
+        self.assertEqual(self.check(), (1, ["ATTESTATION_UNVERIFIED"]))
+
+    def test_old_snapshot_without_attest_field(self):
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n", {"net/foo.c": "int foo = 1;\n"})
+        self.snapshot()
+        path = os.path.join(mlk_common.series_dir(self.repo.path), "signoff-snapshot.json")
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        for record in data["commits"]:
+            del record["attest"]
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        self.repo.git("commit", "--amend", "-q", "-m",
+                      f"net: foo: fix\n\nBody.\n\nTested-by: X <x@example.org>\n{HUMAN_SOB}")
+        self.assertEqual(self.check(), (0, []))
+
     def test_snapshot_is_per_series(self):
         self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
         self.snapshot()
@@ -156,8 +188,8 @@ class GuardTest(unittest.TestCase):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         self.assertEqual(data["commits"], [
-            {"subject": "net: foo: fix", "sob": ["Test Human <human@example.org>"]},
-            {"subject": "net: foo: more", "sob": []},
+            {"subject": "net: foo: fix", "sob": ["Test Human <human@example.org>"], "attest": []},
+            {"subject": "net: foo: more", "sob": [], "attest": []},
         ])
 
     def test_sob_moved_to_new_patch_flagged(self):
