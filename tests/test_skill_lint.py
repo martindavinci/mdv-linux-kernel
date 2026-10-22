@@ -101,7 +101,9 @@ class SkillLintTest(unittest.TestCase):
                 path = os.path.join(dirpath, name)
                 in_skill = path.startswith(SKILL_DIR)
                 if name.endswith((".py", ".sh")) or (in_skill and name.endswith(".md")):
-                    if SPDX_CODE not in "\n".join(read(path).splitlines()[:8]):
+                    # SKILL.md: the header follows the YAML frontmatter.
+                    text = re.sub(r"\A---\n.*?\n---\n", "", read(path), count=1, flags=re.S)
+                    if SPDX_CODE not in "\n".join(text.splitlines()[:8]):
                         missing.append(os.path.relpath(path, REPO_ROOT))
         self.assertEqual(missing, [])
 
