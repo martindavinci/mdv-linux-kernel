@@ -42,6 +42,10 @@ import outbound_guard  # noqa: E402
 SHELL_TOOLS = {"Bash", "PowerShell"}
 WRITE_TOOLS = {"Write": "file_path", "Edit": "file_path", "MultiEdit": "file_path",
                "NotebookEdit": "notebook_path"}
+CLAUDE_READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch",
+                          "WebSearch", "TodoWrite", "ToolSearch", "Skill", "AskUserQuestion",
+                          "EnterPlanMode", "ExitPlanMode", "ListAgents", "ReadNotifications",
+                          "TaskStop", "SendMessage", "Monitor", "LSP"}
 CODEX_SHELL_FUNCS = {"shell", "exec_command", "shell_command", "container.exec"}
 CODEX_BENIGN_FUNCS = {"wait", "sleep", "update_plan", "view_image", "request_user_input",
                       "request_user_input_async", "write_stdin"}
@@ -55,10 +59,7 @@ CLAIM_RE = re.compile(r"\b(tested|validated|passes|passed|verified|testato|testa
 PROTECTED_NAMES = {"evidence.json", "signoff-snapshot.json"}
 LOG_DIR_RE = re.compile(r"/mdv-linux-kernel/series/[^/]+/logs/")
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
-SUBST_RE = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 CODEX_CMD_RE = re.compile(r"\bcmd\s*:\s*(\"(?:[^\"\\]|\\.)*\")")
-# Shell variables and $(...) in a re.escape()d command line.
-VAR_RE = re.compile(r"\\\$\\\(.*?\\\)|\\\$(?:\\\{)?\w+(?:\\\})?")
 TIME_SLACK = timedelta(seconds=2)
 
 
@@ -134,6 +135,10 @@ def load_claude(path: str) -> Transcript:
                 else:
                     if name in ("Agent", "Task"):
                         tr.subagents_spawned += 1
+                    elif name not in CLAUDE_READ_ONLY_TOOLS:
+                        # Unknown tools (MCP servers, new built-ins) may act outside the
+                        # shell: the audit cannot vouch for them.
+                        tr.unknown_tools[name] = tr.unknown_tools.get(name, 0) + 1
                     continue
                 tr.calls.append(call)
                 if block.get("id"):
@@ -192,7 +197,7 @@ def load_codex(path: str) -> Transcript:
                 cmd = _argv_command(item.get("command"))
                 exit_code = item.get("exit_code", item.get("exitCode"))
                 events.append(Call(path, "shell" if cmd else "unparsed", command=cmd,
-                                   requested=started.get(iid, stamp), finished=stamp,
+                                   requested=started.get(iid), finished=stamp,
                                    completed=True, error=exit_code not in (None, 0),
                                    tool="CommandExecution"))
             elif item.get("type") == "FileChange":
@@ -212,9 +217,10 @@ def load_codex(path: str) -> Transcript:
                 continue
             calls: list[Call] = []
             if ptype == "function_call":
-                name = p.get("name") or ""
+                full_name = p.get("name") or ""
+                name = full_name.split(".")[-1]  # e.g. "functions.exec_command"
                 args = _codex_args(p.get("arguments"))
-                if name in CODEX_SHELL_FUNCS:
+                if name in CODEX_SHELL_FUNCS or full_name in CODEX_SHELL_FUNCS:
                     cmd = _argv_command(args.get("command", args.get("cmd")))
                     calls.append(Call(path, "shell" if cmd else "unparsed", command=cmd,
                                       requested=stamp, tool=name))
@@ -222,7 +228,7 @@ def load_codex(path: str) -> Transcript:
                     calls += [Call(path, "write", path=x, requested=stamp, tool=name)
                               for x in _patch_paths(args.get("input") or args.get("patch"))]
                 elif name not in CODEX_BENIGN_FUNCS:
-                    tr.unknown_tools[name] = tr.unknown_tools.get(name, 0) + 1
+                    tr.unknown_tools[full_name] = tr.unknown_tools.get(full_name, 0) + 1
             elif ptype == "local_shell_call":
                 cmd = _argv_command((p.get("action") or {}).get("command"))
                 calls.append(Call(path, "shell" if cmd else "unparsed", command=cmd,
@@ -247,13 +253,38 @@ def load_codex(path: str) -> Transcript:
                 requests.append(call)
                 if p.get("call_id"):
                     by_call_id[p["call_id"]] = call
-    if any(c.tool == "CommandExecution" for c in events):
-        # Completed command events are the record; requests would double count
-        # shell calls, but keep their writes and what could not be read.
-        tr.calls = events + [c for c in requests if c.kind != "shell"]
-    else:
-        tr.calls = events + requests
+    # A shell request and the command event it produced are one call: pair them
+    # (the request gives the start time when the event has none). Requests with
+    # no event stay, completed or not according to their own output record.
+    unpaired = [e for e in events if e.kind == "shell"]
+    kept: list[Call] = []
+    for req in requests:
+        if req.kind == "shell":
+            match = next((e for e in unpaired if req.command in (e.command, _inner_script(e.command))),
+                         None)
+            if match is not None:
+                unpaired.remove(match)
+                if match.requested is None:
+                    match.requested = req.requested
+                continue
+        kept.append(req)
+    tr.calls = events + kept
     return tr
+
+
+def _inner_script(command: str | None) -> str | None:
+    """The script of `bash -lc SCRIPT` / `powershell -Command SCRIPT`, else None."""
+    if not command:
+        return None
+    words = [w.text for w in lex(command)[0] if w.op is None]
+    if len(words) >= 3 and os.path.basename(words[0]).lower() in SHELLS \
+            and re.fullmatch(r"-[a-z]*c[a-z]*", words[1]):
+        return words[2]
+    if len(words) >= 3 and os.path.basename(words[0]).lower() in (
+            "powershell", "powershell.exe", "pwsh", "pwsh.exe") \
+            and words[1].lower() in ("-command", "-c"):
+        return words[2]
+    return None
 
 
 def load_commands(path: str) -> Transcript:
@@ -295,75 +326,242 @@ def _strip_heredocs(cmd: str) -> str:
     return "\n".join(out)
 
 
-def split_commands(cmd: str, depth: int = 0) -> list[list[str]]:
-    """Simple commands in a shell command line, as word lists (prefixes kept)."""
+@dataclass
+class Word:
+    """A shell word: its value, a regex for what it can expand to, or an operator."""
+    text: str = ""
+    pattern: str = ""
+    bare_var: bool = False  # unquoted and only an expansion: may become several words
+    op: str | None = None   # control operator (";", "&&", "|", ...) or redirection (">", ...)
+
+
+CONTROL_OPS = ("&&", "||", ";;", "|&", ";", "&", "|")
+REDIR_OPS = (">>", ">|", "&>", ">&", "<<<", "<>", ">", "<")
+EXPANDED = "[^\x00]*"
+
+
+def _read_subst(cmd: str, i: int) -> tuple[str, int]:
+    """cmd[i:] starts after "$(": return (inner text, index after the closing paren)."""
+    depth, j, quote = 1, i, None
+    while j < len(cmd):
+        c = cmd[j]
+        if quote:
+            if c == quote:
+                quote = None
+            elif c == "\\" and quote == '"':
+                j += 1
+        elif c in ("'", '"'):
+            quote = c
+        elif c == "\\":
+            j += 1
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return cmd[i:j], j + 1
+        j += 1
+    return cmd[i:], len(cmd)
+
+
+def _read_dollar(cmd: str, i: int, subs: list[str]) -> int:
+    """cmd[i] is "$": skip the expansion, recording command substitutions."""
+    nxt = cmd[i + 1:i + 2]
+    if nxt == "(":
+        if cmd[i + 2:i + 3] == "(":  # $(( arithmetic ))
+            inner, end = _read_subst(cmd, i + 3)
+            return end + 1 if cmd[end:end + 1] == ")" else end
+        inner, end = _read_subst(cmd, i + 2)
+        subs.append(inner)
+        return end
+    if nxt == "{":
+        end = cmd.find("}", i + 2)
+        return len(cmd) if end < 0 else end + 1
+    m = re.match(r"[A-Za-z_][A-Za-z0-9_]*|[0-9?#@*$!-]", cmd[i + 1:])
+    return i + 1 + (len(m.group(0)) if m else 0)
+
+
+def lex(cmd: str) -> tuple[list[Word], list[str]]:
+    """Split a shell command line into words and operators, like a shell would
+    (quotes, escapes, $-expansions), without expanding anything.
+
+    Returns the words and the text of every command substitution found
+    outside single quotes. A heuristic: no aliases, functions or eval.
+    """
+    words: list[Word] = []
+    subs: list[str] = []
+    i, n = 0, len(cmd)
+    while i < n:
+        c = cmd[i]
+        if c in " \t":
+            i += 1
+            continue
+        if c == "\n":
+            words.append(Word(op=";"))
+            i += 1
+            continue
+        if c == "#":
+            while i < n and cmd[i] != "\n":
+                i += 1
+            continue
+        if c in "()":
+            words.append(Word(op=";"))
+            i += 1
+            continue
+        m = re.match(r"\d*(" + "|".join(re.escape(o) for o in REDIR_OPS) + ")", cmd[i:])
+        if m and (c in "<>&" or m.group(0)[:-len(m.group(1))].isdigit()):
+            if not (c == "&" and m.group(1) not in ("&>",)):
+                words.append(Word(text=m.group(1), op=m.group(1)))
+                i += len(m.group(0))
+                continue
+        op = next((o for o in CONTROL_OPS if cmd.startswith(o, i)), None)
+        if op:
+            words.append(Word(op=op))
+            i += len(op)
+            continue
+        text, pat, kinds = [], [], []
+        while i < n and cmd[i] not in " \t\n;&|<>()":
+            c = cmd[i]
+            if c == "\\":
+                if i + 1 < n and cmd[i + 1] != "\n":
+                    text.append(cmd[i + 1])
+                    pat.append(re.escape(cmd[i + 1]))
+                    kinds.append("lit")
+                i += 2
+            elif c == "'":
+                end = cmd.find("'", i + 1)
+                end = n if end < 0 else end
+                text.append(cmd[i + 1:end])
+                pat.append(re.escape(cmd[i + 1:end]))
+                kinds.append("lit")
+                i = end + 1
+            elif c == '"':
+                i += 1
+                while i < n and cmd[i] != '"':
+                    d = cmd[i]
+                    if d == "\\" and i + 1 < n and cmd[i + 1] in '$`"\\\n':
+                        text.append(cmd[i + 1])
+                        pat.append(re.escape(cmd[i + 1]))
+                        i += 2
+                    elif d == "$" and i + 1 < n and re.match(r"[A-Za-z_({0-9?#@*$!-]", cmd[i + 1]):
+                        j = _read_dollar(cmd, i, subs)
+                        text.append(cmd[i:j])
+                        pat.append(EXPANDED)
+                        i = j
+                    elif d == "`":
+                        end = cmd.find("`", i + 1)
+                        end = n if end < 0 else end
+                        subs.append(cmd[i + 1:end])
+                        text.append(cmd[i:end + 1])
+                        pat.append(EXPANDED)
+                        i = end + 1
+                    else:
+                        text.append(d)
+                        pat.append(re.escape(d))
+                        i += 1
+                i += 1
+                kinds.append("dq")
+            elif c == "$" and i + 1 < n and re.match(r"[A-Za-z_({0-9?#@*$!-]", cmd[i + 1]):
+                j = _read_dollar(cmd, i, subs)
+                text.append(cmd[i:j])
+                pat.append(EXPANDED)
+                kinds.append("var")
+                i = j
+            elif c == "`":
+                end = cmd.find("`", i + 1)
+                end = n if end < 0 else end
+                subs.append(cmd[i + 1:end])
+                text.append(cmd[i:end + 1])
+                pat.append(EXPANDED)
+                kinds.append("var")
+                i = end + 1
+            else:
+                text.append(c)
+                pat.append(EXPANDED if c in "*?[" else re.escape(c))
+                kinds.append("lit")
+                i += 1
+        words.append(Word(text="".join(text), pattern="".join(pat),
+                          bare_var=kinds == ["var"]))
+    return words, subs
+
+
+def split_words(cmd: str, depth: int = 0) -> list[list[Word]]:
+    """Simple commands of a command line, as Word lists, including commands in
+    `sh -c '...'`, `powershell -Command ...` and $(...) substitutions."""
     if depth > 4:
         return []
-    cmd = _strip_heredocs(cmd)
-    nested = [m.group(1) or m.group(2) for m in SUBST_RE.finditer(cmd)]
-    # Parentheses are not operators here, so "-j$(nproc)" stays one word.
-    lexer = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=";&|<>")
-    lexer.whitespace_split = True
-    try:
-        tokens = list(lexer)
-    except ValueError:
-        tokens = cmd.split()
-    segments: list[list[str]] = []
-    current: list[str] = []
-    for tok in tokens:
-        if tok and set(tok) <= set(";&|"):
+    words, subs = lex(_strip_heredocs(cmd))
+    segments: list[list[Word]] = []
+    current: list[Word] = []
+    for w in words:
+        if w.op in CONTROL_OPS:
             if current:
                 segments.append(current)
             current = []
         else:
-            current.append(tok)
+            current.append(w)
     if current:
         segments.append(current)
-    out: list[list[str]] = []
+    out: list[list[Word]] = []
     for seg in segments:
         out.append(seg)
-        env, words = command_words(seg)
-        if words and os.path.basename(words[0]) in SHELLS:
-            for i, w in enumerate(words[1:], 1):
-                if re.fullmatch(r"-[a-z]*c[a-z]*", w) and i + 1 < len(words):
-                    out += split_commands(words[i + 1], depth + 1)
+        _, cw = command_words([w.text for w in seg])
+        name = os.path.basename(cw[0]).lower() if cw else ""
+        if name in SHELLS:
+            for i, w in enumerate(cw[1:], 1):
+                if re.fullmatch(r"-[a-z]*c[a-z]*", w) and i + 1 < len(cw):
+                    out += split_words(cw[i + 1], depth + 1)
                     break
-        if words and os.path.basename(words[0]).lower() in ("powershell", "powershell.exe",
-                                                             "pwsh", "pwsh.exe"):
-            for i, w in enumerate(words[1:], 1):
-                if w.lower() in ("-command", "-c") and i + 1 < len(words):
-                    out += split_commands(words[i + 1], depth + 1)
+        elif name in ("powershell", "powershell.exe", "pwsh", "pwsh.exe"):
+            for i, w in enumerate(cw[1:], 1):
+                if w.lower() in ("-command", "-c") and i + 1 < len(cw):
+                    out += split_words(cw[i + 1], depth + 1)
                     break
-    for inner in nested:
-        out += split_commands(inner, depth + 1)
+    for inner in subs:
+        out += split_words(inner, depth + 1)
     return out
+
+
+def split_commands(cmd: str, depth: int = 0) -> list[list[str]]:
+    """Simple commands of a command line, as word lists (prefixes kept)."""
+    return [[w.text for w in seg] for seg in split_words(cmd, depth)]
+
+
+SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "do", "done", "while", "until",
+                  "!", "{", "}", "time"}
+OPTS_WITH_VALUE = {
+    "sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-R", "-T",
+             "--user", "--group", "--chdir", "--host", "--prompt", "--role", "--type",
+             "--other-user", "--chroot", "--command-timeout", "--close-from"},
+    "env": {"-u", "-C", "-S", "--unset", "--chdir", "--split-string"},
+    "nice": {"-n", "--adjustment"},
+    "timeout": {"-s", "-k", "--signal", "--kill-after"},
+    "runuser": {"-u", "-g", "-G", "--user", "--group", "--supp-group"},
+}
 
 
 def command_words(seg: list[str]) -> tuple[dict, list[str]]:
     """(VAR=value assignments, words from the command name on)."""
     env: dict[str, str] = {}
-    words = [w for w in seg if w not in ("(", ")", "{", "}")]
-    if words and words[0][:1] in ("(", "{") and len(words[0]) > 1:
-        words[0] = words[0][1:]
+    words = list(seg)
     while words:
         w = words[0]
-        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w):
+        if w in SHELL_KEYWORDS:
+            words.pop(0)
+        elif re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w):
             key, _, value = w.partition("=")
             env[key] = value
             words.pop(0)
-        elif w == "env":
+        elif w in ("env", "nice", "timeout", "runuser") or w in PREFIX_WORDS:
             words.pop(0)
+            with_value = OPTS_WITH_VALUE.get(w, set())
             while words and words[0].startswith("-"):
-                words.pop(0)
-        elif w in PREFIX_WORDS:
-            words.pop(0)
-            while words and words[0].startswith("-"):
-                words.pop(0)
-        elif w == "timeout":
-            words.pop(0)
-            while words and words[0].startswith("-"):
-                words.pop(0)
-            if words:
+                opt = words.pop(0)
+                if opt == "--":
+                    break
+                if opt in with_value and words:
+                    words.pop(0)
+            if w == "timeout" and words:
                 words.pop(0)  # the duration
         else:
             break
@@ -426,10 +624,9 @@ def forbidden(words: list[str]) -> str | None:
             sub = outbound_guard.b4_subcommand(args)[0]
             return {"send": "b4-send", "ty": "b4-ty-send", "pr": "b4-pr-send"}[sub]
         sub, rest = outbound_guard.b4_subcommand(args)
-        opts = {a.split("=", 1)[0] for a in rest if a.startswith("-")}
-        if sub == "prep" and opts & {"-n", "--new", "-e", "--enroll"}:
+        if sub == "prep" and outbound_guard._has_option(rest, "ne", {"--new", "--enroll"}):
             return "b4-prep-enroll"
-        if sub == "trailers" and opts & {"-u", "--update"}:
+        if sub == "trailers" and outbound_guard._has_option(rest, "u", {"--update"}):
             return "b4-trailers-update"
     return None
 
@@ -463,22 +660,34 @@ def shell_write_targets(words: list[str]) -> list[str]:
     return targets
 
 
-def evidence_invocation(words: list[str]) -> dict | None:
-    """Parse `[python3] .../evidence.py <sub> [opts] [-- cmd...]`."""
-    for i, w in enumerate(words):
-        if w.replace("\\", "/").endswith("evidence.py"):
-            rest = words[i + 1:]
-            break
-    else:
+def evidence_invocation(seg: list[Word], script_name: str = "evidence.py") -> dict | None:
+    """Parse `[python3 [opts]] .../<script> <sub> [opts] [-- cmd...]` when it is
+    the command actually run (not an argument of echo, grep...)."""
+    texts = [w.text for w in seg]
+    env, cw = command_words(texts)
+    offset = len(texts) - len(cw)
+    if not cw:
         return None
-    if not rest:
+    script = None
+    first = os.path.basename(cw[0].replace("\\", "/"))
+    if first.endswith(script_name):
+        script = 0
+    elif re.fullmatch(r"python[0-9.]*(?:\.exe)?", first.lower()):
+        j = 1
+        while j < len(cw) and cw[j].startswith("-"):
+            j += 2 if cw[j] in ("-X", "-W") else 1
+        if j < len(cw) and cw[j].replace("\\", "/").endswith(script_name):
+            script = j
+    if script is None or script + 1 >= len(cw):
         return None
-    inv: dict = {"sub": rest[0], "opts": {}, "cmd": None}
+    rest = cw[script + 1:]
+    inv: dict = {"sub": rest[0], "opts": {}, "cmd": None, "env": env}
     opts, j = rest[1:], 0
     while j < len(opts):
         o = opts[j]
         if o == "--":
-            inv["cmd"] = opts[j + 1:]
+            start = offset + script + 2 + j + 1
+            inv["cmd"] = seg[start:]
             break
         if o.startswith("--") and "=" in o:
             k, v = o[2:].split("=", 1)
@@ -492,17 +701,28 @@ def evidence_invocation(words: list[str]) -> dict | None:
     return inv
 
 
-def _cmd_pattern(tokens: list[str]) -> re.Pattern:
-    """Regex for a command as typed: shell variables and substitutions match anything."""
-    text = re.escape(" ".join(tokens))
-    return re.compile(VAR_RE.sub(lambda _: ".*?", text), re.S)
+def cmd_matches(typed: list[Word], recorded: str) -> bool:
+    """Does the command recorded by evidence.py match the words as typed?
 
-
-def _entry_cmd_text(entry_cmd: str) -> str:
+    Word boundaries count; quoted text is literal; $VAR, ${VAR}, $(...) and
+    globs match anything inside their word, and an unquoted lone expansion
+    ($OBJS) may stand for one or more words.
+    """
     try:
-        return " ".join(shlex.split(entry_cmd))
+        actual = shlex.split(recorded)
     except ValueError:
-        return entry_cmd
+        return False
+    parts, skip = [], False
+    for w in typed:
+        if skip:  # the target of a redirection applies to evidence.py, not the command
+            skip = False
+        elif w.op in REDIR_OPS:
+            skip = True
+        elif w.op is None:
+            parts.append("[^\x00]*(?:\x00[^\x00]*)*" if w.bare_var else w.pattern)
+    if not parts:
+        return not actual
+    return re.fullmatch("\x00".join(parts), "\x00".join(actual), re.S) is not None
 
 
 def _within(call: Call, started: str | None) -> bool | None:
@@ -529,11 +749,10 @@ def evidence_calls(calls: list[Call]) -> list[tuple[Call, dict, dict]]:
     for call in calls:
         if call.kind != "shell" or not call.command:
             continue
-        for seg in split_commands(call.command):
-            env, words = command_words(seg)
-            inv = evidence_invocation(words)
+        for seg in split_words(call.command):
+            inv = evidence_invocation(seg)
             if inv:
-                out.append((call, env, inv))
+                out.append((call, inv["env"], inv))
     return out
 
 
@@ -554,8 +773,7 @@ def reconcile(calls: list[Call], store: dict, series: str | None) -> dict:
             if not call.completed:
                 problem = "ENTRY_CALL_NOT_COMPLETED"
             elif sub == "run":
-                typed = inv["cmd"] or []
-                if not _cmd_pattern(typed).fullmatch(_entry_cmd_text(entry.get("cmd", ""))):
+                if not cmd_matches(inv["cmd"] or [], entry.get("cmd", "")):
                     problem = "ENTRY_CMD_MISMATCH"
             if problem is None and _within(call, entry.get("started")) is False:
                 problem = "ENTRY_TIME_MISMATCH"
@@ -591,7 +809,8 @@ def audit(transcripts: list[Transcript], store: dict | None, series: str | None,
                               "source": call.source})
         if call.kind != "shell" or not call.command:
             continue
-        for seg in split_commands(call.command):
+        for wseg in split_words(call.command):
+            seg = [w.text for w in wseg]
             env, words = command_words(seg)
             rule = forbidden(words)
             if rule:
@@ -602,12 +821,12 @@ def audit(transcripts: list[Transcript], store: dict | None, series: str | None,
                 if is_protected(target):
                     protected.append({"path": target, "tool": call.tool, "time": call.requested,
                                       "command": call.command[:500], "source": call.source})
-            joined = " ".join(words)
-            if re.search(r"signoff_guard\.py\s+snapshot\b", joined):
+            snap = evidence_invocation(wseg, "signoff_guard.py")
+            if snap and snap["sub"] == "snapshot":
                 snapshots += 1
                 if snapshots > 1:
                     recaptures.append({"command": call.command[:500], "time": call.requested})
-            inv = evidence_invocation(words)
+            inv = evidence_invocation(wseg)
             if inv and inv["sub"] == "init" and inv["opts"].get("force"):
                 init_force.append({"command": call.command[:500], "time": call.requested})
     unparsed = [{"source": c.source, "tool": c.tool, "time": c.requested}
@@ -627,7 +846,7 @@ def audit(transcripts: list[Transcript], store: dict | None, series: str | None,
         "transcripts": [{"source": t.source, "format": t.fmt, "calls": len(t.calls)}
                         for t in transcripts],
         "coverage": {
-            "status": "partial" if unparsed else "complete",
+            "status": "partial" if unparsed or unknown else "complete",
             "shell_calls": sum(c.kind == "shell" for c in calls),
             "write_calls": sum(c.kind == "write" for c in calls),
             "not_completed": sum(not c.completed for c in calls),
@@ -642,7 +861,7 @@ def audit(transcripts: list[Transcript], store: dict | None, series: str | None,
         "review": {"snapshot_recaptures": recaptures, "init_force": init_force,
                    "claims": claims},
     }
-    report["ok"] = not (forbidden_hits or protected or attempts or unparsed
+    report["ok"] = not (forbidden_hits or protected or attempts or unparsed or unknown
                         or (evidence and evidence["violations"]))
     return report
 

@@ -12,8 +12,9 @@
 #         lkml.kernel.org (the b4 web submission endpoint) and of each --host.
 #         The rest of the network (the agent's API, git fetch) stays open.
 #         Host addresses are resolved now: re-run apply if they change.
-# check   verifies the rules are loaded and that NAME cannot open
-#         smtp.gmail.com:587 or lkml.kernel.org:443.
+# check   verifies the SMTP rule for NAME is loaded and that root can open
+#         smtp.gmail.com:587 and lkml.kernel.org:443 while NAME cannot; it
+#         fails when the result is inconclusive (no network, DNS, tools).
 # remove  deletes the rules.
 #
 # Run as root, outside the agent session. Needs nft, getent, runuser, timeout.
@@ -87,17 +88,34 @@ EOF
 	[ -n "$v4$v6" ] || echo "warning: no address resolved for ${HOSTS[*]}" >&2
 	;;
 check)
-	status=0
-	if ! nft list table inet "$TABLE" >/dev/null 2>&1; then
+	# Fails closed: "blocked" is only reported when root (unfiltered) can reach
+	# the target and the eval user cannot. Anything inconclusive is a failure.
+	for tool in nft runuser timeout getent; do
+		command -v "$tool" >/dev/null 2>&1 || { echo "FAIL: missing tool $tool"; exit 1; }
+	done
+	rules="$(nft list table inet "$TABLE" 2>/dev/null)" || {
 		echo "FAIL: table inet $TABLE not loaded (run: egress.sh apply --user $user)"
 		exit 1
+	}
+	# nft may print the uid as a user name.
+	if ! grep -Eq "skuid ($uid|$user) tcp dport \{ 25, 465, 587, 2525 \}" <<<"$rules"; then
+		echo "FAIL: no SMTP rule for uid $uid in table inet $TABLE"
+		exit 1
 	fi
+	status=0
 	for target in smtp.gmail.com/587 lkml.kernel.org/443; do
-		if runuser -u "$user" -- timeout 5 bash -c "exec 3<>/dev/tcp/$target" 2>/dev/null; then
-			echo "FAIL: $user can connect to ${target/\//:}"
+		shown="${target/\//:}"
+		if ! timeout 5 bash -c "exec 3<>/dev/tcp/$target" 2>/dev/null; then
+			echo "FAIL: inconclusive, root cannot reach $shown either (DNS or network down?)"
+			status=1
+		elif runuser -u "$user" -- timeout 5 bash -c "exec 3<>/dev/tcp/$target" 2>/dev/null; then
+			echo "FAIL: $user can connect to $shown"
+			status=1
+		elif ! runuser -u "$user" -- true 2>/dev/null; then
+			echo "FAIL: inconclusive, cannot run commands as $user"
 			status=1
 		else
-			echo "ok: $user cannot connect to ${target/\//:}"
+			echo "ok: root reaches $shown, $user cannot"
 		fi
 	done
 	exit "$status"

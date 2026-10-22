@@ -78,7 +78,9 @@ the right context instead (a workqueue for things that sleep).
 
 - `GFP_KERNEL`: may sleep; process context only.
 - `GFP_ATOMIC` (or `GFP_NOWAIT`): never sleeps, may fail; in atomic
-  context. Handle the failure (drop the packet, retry later).
+  context. Handle the failure (drop the packet, retry later). Not under a
+  `raw_spinlock_t` or with hard interrupts really disabled on PREEMPT_RT,
+  where no allocation is allowed (`Documentation/locking/locktypes.rst`).
 - Networking helpers pick the flags for you in their context, for example
   skb allocation helpers meant for NAPI or for drivers; check their
   comments in the tree.

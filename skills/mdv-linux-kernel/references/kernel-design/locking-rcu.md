@@ -26,6 +26,14 @@ Rule of thumb: every place that takes a lock must use the variant for the
 most interrupting context that also takes it. lockdep reports a mismatch
 as "inconsistent lock state" when the debug configs are on.
 
+**PREEMPT_RT changes these meanings.** With `CONFIG_PREEMPT_RT`,
+`spinlock_t` becomes a sleeping lock, `spin_lock_irqsave()` does not
+disable hard interrupts, and only `raw_spinlock_t` keeps the strict
+non-sleeping behaviour (where even `GFP_ATOMIC` allocations are not
+allowed). Code that is correct on a normal build can be wrong on RT.
+`Documentation/locking/locktypes.rst` describes the rules; read it before
+touching interrupt-disabling or raw locks.
+
 ## Mutexes: may sleep, process context only
 
 `mutex_lock()` can sleep, so it is never allowed in BH, IRQ, under a

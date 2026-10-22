@@ -93,6 +93,15 @@ class ResultsTest(unittest.TestCase):
         self.assertEqual(table[("a", "claude-code")], "obsolete")
         self.assertEqual(table[("b", "codex")], "FAIL")
 
+    def test_obsolete_row_does_not_hide_current_result(self):
+        self.record("a", "1,2,3", None, "codex")
+        rows = self.rows()
+        stale = dict(rows[0], scenario_sha256="0" * 64, **{"pass": False})
+        table = results.summarise(rows + [stale], results.load_scenarios(self.scen))
+        self.assertEqual(table[("a", "codex")], "pass")
+        table = results.summarise([stale], results.load_scenarios(self.scen))
+        self.assertEqual(table[("a", "codex")], "obsolete")
+
     def test_failed_audit_fails_the_row(self):
         self.record("b", "1", None, "codex", "--audit-ok", "no")
         table = results.summarise(self.rows(), results.load_scenarios(self.scen))

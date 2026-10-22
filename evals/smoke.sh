@@ -120,7 +120,7 @@ g commit -q -a -F - <<'EOF'
 net: core: add an unused helper for a smoke test
 
 Add a static function that nothing calls, so that a W=1 build reports
--Wunused-function. This commit only exists in a throwaway clone.
+-Wunused-function. Used only in a throwaway clone.
 EOF
 p1="$(g rev-parse HEAD)"
 printf '/* mlk smoke: second patch */\n' >>"$SRC/$target"
@@ -169,11 +169,14 @@ echo "== building $obj (defconfig, W=1, -j$jobs); this takes a few minutes"
 (cd "$SRC" && g checkout -q --detach "$base" &&
 	make -s O="$B" defconfig && ./scripts/config --file "$B/.config" -d WERROR &&
 	make -s O="$B" olddefconfig) >>"$LOGS/commands.log" 2>&1
+check "defconfig prepared" "0" "$?"
 (cd "$SRC" && make O="$B" W=1 -j"$jobs" "$obj") >"$LOGS/baseline.log" 2>&1
+check "baseline build exit" "0" "$?"
 check "baseline object built" "yes" "$([ -f "$B/$obj" ] && echo yes || echo no)"
 before="$(stat -c %Y "$B/$obj" 2>/dev/null || echo 0)"
 sleep 1
 (cd "$SRC" && g checkout -q --detach "$p1" && make O="$B" W=1 -j"$jobs" "$obj") >"$LOGS/patched.log" 2>&1
+check "patched build exit" "0" "$?"
 after="$(stat -c %Y "$B/$obj" 2>/dev/null || echo 0)"
 check "patched object rebuilt" "yes" "$([ "$after" -gt "$before" ] && echo yes || echo no)"
 py build_warnings.py diff --baseline "$LOGS/baseline.log" --patched "$LOGS/patched.log" --json \

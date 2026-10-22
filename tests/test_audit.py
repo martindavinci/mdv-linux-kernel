@@ -81,6 +81,23 @@ class SplitTest(unittest.TestCase):
         self.assertEqual(self.rules("b4 am msgid"), [])
         self.assertEqual(self.rules("/usr/sbin/sendmail -t < mail"), ["sendmail"])
 
+    def test_quoting_is_respected(self):
+        self.assertEqual(self.rules("echo '$(git push)'"), [])
+        self.assertEqual(self.rules("echo ';' git push"), [])
+        self.assertEqual(self.rules("echo \"a && git push\""), [])
+        self.assertEqual(self.rules("echo \"$(git push)\""), ["git-push"])
+        self.assertEqual(self.rules("echo `git push`"), ["git-push"])
+
+    def test_compound_commands_and_option_values(self):
+        self.assertEqual(self.rules("if true; then git push; fi"), ["git-push"])
+        self.assertEqual(self.rules("while x; do b4 send; done"), ["b4-send"])
+        self.assertEqual(self.rules("sudo -u mlkeval git send-email p.patch"), ["git-send-email"])
+        self.assertEqual(self.rules("(cd r && git push)"), ["git-push"])
+        self.assertEqual(self.rules("timeout -s KILL 10 git push"), ["git-push"])
+        self.assertEqual(self.rules("b4 ty -aS"), ["b4-ty-send"])
+        self.assertEqual(self.rules("b4 ty --send"), ["b4-ty-send"])
+        self.assertEqual(self.rules("b4 --conf k=v send"), ["b4-send"])
+
     def test_make_with_substitution_stays_one_command(self):
         segs = audit.split_commands("make O=$KB -j$(nproc) net/foo.o")
         self.assertEqual(segs[0], ["make", "O=$KB", "-j$(nproc)", "net/foo.o"])
@@ -132,6 +149,50 @@ class LoaderTest(unittest.TestCase):
         self.assertEqual([c.path for c in tr.calls if c.kind == "write"], ["net/foo.c"])
         self.assertEqual(tr.unknown_tools, {"mcp__lore__search": 1})
         self.assertEqual(tr.texts, ["I verified the fix."])
+
+    def write_jsonl(self, records: list[dict]) -> str:
+        path = os.path.join(make_tmpdir(self), "t.jsonl")
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+        return path
+
+    def test_codex_unmatched_request_is_kept(self):
+        path = self.write_jsonl([
+            {"timestamp": "2026-10-22T11:00:00.000Z", "type": "session_meta", "payload": {}},
+            {"timestamp": "2026-10-22T11:00:01.000Z", "type": "response_item",
+             "payload": {"type": "function_call", "name": "exec_command", "call_id": "a",
+                         "arguments": json.dumps({"cmd": "git status"})}},
+            {"timestamp": "2026-10-22T11:00:09.000Z", "type": "event_msg",
+             "payload": {"type": "item_completed", "item": {
+                 "type": "CommandExecution", "id": "e1",
+                 "command": ["/bin/bash", "-lc", "git status"], "exit_code": 0}}},
+            {"timestamp": "2026-10-22T11:00:10.000Z", "type": "response_item",
+             "payload": {"type": "function_call", "name": "functions.exec_command",
+                         "call_id": "b", "arguments": json.dumps({"cmd": "git send-email x"})}},
+        ])
+        tr = audit.load_any(path)
+        shells = [c for c in tr.calls if c.kind == "shell"]
+        self.assertEqual(len(shells), 2)
+        status = [c for c in shells if c.tool == "CommandExecution"][0]
+        self.assertEqual(status.requested, "2026-10-22T11:00:01.000Z")  # from the request
+        sent = [c for c in shells if c.command == "git send-email x"][0]
+        self.assertFalse(sent.completed)
+        r = audit.audit([tr], None, None, [])
+        self.assertEqual([f["rule"] for f in r["forbidden"]], ["git-send-email"])
+
+    def test_unknown_tools_make_coverage_partial(self):
+        path = self.write_jsonl([
+            {"type": "assistant", "timestamp": "2026-10-22T10:00:00.000Z", "message": {
+                "content": [{"type": "tool_use", "id": "x", "name": "mcp__mail__send",
+                             "input": {"to": "netdev@vger.kernel.org"}},
+                            {"type": "tool_use", "id": "y", "name": "Read",
+                             "input": {"file_path": "/x"}}]}}])
+        tr = audit.load_any(path)
+        self.assertEqual(tr.unknown_tools, {"mcp__mail__send": 1})
+        r = audit.audit([tr], None, None, [])
+        self.assertEqual(r["coverage"]["status"], "partial")
+        self.assertFalse(r["ok"])
 
     def test_commands_file(self):
         path = os.path.join(make_tmpdir(self), "cmds.txt")
@@ -254,6 +315,26 @@ class ReconcileTest(unittest.TestCase):
         cmd = "python3 /skill/scripts/evidence.py run --name build-objs --category build -- true"
         r = self.reconcile([cmd, self.SKIP])
         self.assertEqual(self.codes(r), ["ENTRY_CMD_MISMATCH"])
+
+    def test_printed_command_is_not_execution(self):
+        r = self.reconcile(["echo " + self.run_cmd(), self.SKIP])
+        self.assertEqual(self.codes(r), ["ENTRY_UNMATCHED"])
+
+    def test_cmd_matches_word_boundaries_and_quotes(self):
+        def m(typed: str, recorded: list[str]) -> bool:
+            seg = audit.split_words("python3 s/evidence.py run --name x -- " + typed)[0]
+            inv = audit.evidence_invocation(seg)
+            return audit.cmd_matches(inv["cmd"], shlex.join(recorded))
+        self.assertTrue(m("echo a b", ["echo", "a", "b"]))
+        self.assertFalse(m("echo 'a b'", ["echo", "a", "b"]))
+        self.assertTrue(m("echo 'a b'", ["echo", "a b"]))
+        self.assertFalse(m("echo '$X'", ["echo", "forged"]))
+        self.assertTrue(m("echo '$X'", ["echo", "$X"]))
+        self.assertTrue(m('echo "$X"', ["echo", "any thing"]))
+        self.assertTrue(m("make $OBJS", ["make", "a.o", "b.o"]))
+        self.assertFalse(m('make "$OBJS" x', ["make", "a.o", "b.o"]))
+        self.assertTrue(m("make -j$(nproc) O=$KB", ["make", "-j8", "O=/k"]))
+        self.assertTrue(m("make 2>&1", ["make"]))
 
     def test_variables_match_anything(self):
         cmd = "python3 /skill/scripts/evidence.py run --name build-objs --category build -- $PY -c \"$CODE\""

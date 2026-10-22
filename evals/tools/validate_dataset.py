@@ -40,6 +40,10 @@ FIXES_RE = re.compile(r'^Fixes: ([0-9a-f]{12,40}) \("(.+)"\)$')
 MSGID_RE = re.compile(r"^[^<>\s]+@[^<>\s]+$")
 
 
+def _one_of(value, allowed: set) -> bool:
+    return isinstance(value, str) and value in allowed
+
+
 def _url(value, prefix: str = "https://") -> bool:
     return isinstance(value, str) and value.startswith(prefix)
 
@@ -63,13 +67,14 @@ def validate(data) -> list[str]:
             err("id must match [a-z0-9-]+")
         elif cid in seen:
             err("duplicate id")
-        seen.add(cid)
+        else:
+            seen.add(cid)
         kind = case.get("kind")
-        if kind not in KINDS:
+        if not _one_of(kind, KINDS):
             err(f"kind must be one of {sorted(KINDS)}")
-        if case.get("split") not in SPLITS:
+        if not _one_of(case.get("split"), SPLITS):
             err(f"split must be one of {sorted(SPLITS)}")
-        if case.get("tree") not in TREES:
+        if not _one_of(case.get("tree"), TREES):
             err(f"tree must be one of {sorted(TREES)}")
         if not isinstance(case.get("subject"), str) or not case["subject"]:
             err("subject is required")
@@ -89,6 +94,7 @@ def validate(data) -> list[str]:
         fire = expected.get("must_fire", [])
         if not isinstance(fire, list) or not all(
                 isinstance(g, str) and (g in GATES or CODE_RE.match(g)) for g in fire):
+            fire = []
             err(f"expected.must_fire: gates from {sorted(GATES)} or script codes")
         if not isinstance(expected.get("must_not_error"), bool):
             err("expected.must_not_error must be true or false")

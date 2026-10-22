@@ -28,7 +28,10 @@ grep -n 'CONFIG_FOO\b' $KB/.config
 
 `make O=$KB menuconfig` and its search (`/`) show what an option depends
 on. For selftests, the directory's `config` file lists what the tests
-need; `vng --build --config <that file>` merges it.
+need; `vng --build --config <that file>` uses it to generate a config, but
+an existing `.config` in the tree may be kept as it is (see `vng --help`
+for regenerating it). Either way, `grep` the options afterwards: only the
+resulting `.config` counts.
 
 Code inside `#ifdef CONFIG_BAR` or `IS_ENABLED(CONFIG_BAR)` needs that
 option too. Check every conditional the patch touches.

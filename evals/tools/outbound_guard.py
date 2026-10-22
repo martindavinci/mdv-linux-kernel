@@ -33,36 +33,51 @@ from datetime import datetime, timezone
 SHIMS = ["b4", "git-send-email", "sendmail", "msmtp"]
 ATTEMPTS = "attempts.log"
 REAL_B4 = "real-b4"
-B4_OPTS_WITH_VALUE = {"-c", "--config"}
-TY_SEND = {"-S", "--send-email"}
-PR_SEND = {"-e", "--explode", "-s", "--send-as-identity", "--send-email"}
+B4_SUBCOMMANDS = {"mbox", "am", "shazam", "pr", "ty", "diff", "kr", "prep", "send",
+                  "trailers", "attest", "ez-series", "dig"}
+TY_SEND_LONG = {"--send-email"}
+PR_SEND_LONG = {"--explode", "--send-as-identity", "--send-email"}
 
 
 def b4_subcommand(argv: list[str]) -> tuple[str | None, list[str]]:
-    """(subcommand, its arguments), skipping b4's global options."""
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg in B4_OPTS_WITH_VALUE:
-            i += 2
-            continue
-        if arg.startswith("-"):
-            i += 1
-            continue
-        return arg, argv[i + 1:]
+    """(subcommand, its arguments): the first known b4 subcommand name.
+
+    Matching by name, not by position, so global options that take a value
+    (`-c X`, `--conf X`, abbreviations argparse accepts) cannot hide it.
+    """
+    for i, arg in enumerate(argv):
+        if arg == "--":
+            break
+        if not arg.startswith("-") and arg in B4_SUBCOMMANDS:
+            return arg, argv[i + 1:]
     return None, []
 
 
+def _has_option(args: list[str], shorts: str, longs: set[str]) -> bool:
+    """True if any short letter (also inside clusters like -aS) or any long option,
+    or an abbreviation of one (argparse accepts unambiguous prefixes), is present."""
+    for a in args:
+        if a == "--":
+            break
+        if a.startswith("--"):
+            name = a.split("=", 1)[0]
+            if len(name) >= 4 and any(full.startswith(name) for full in longs):
+                return True
+        elif a.startswith("-") and len(a) > 1 and any(ch in shorts for ch in a[1:]):
+            return True
+    return False
+
+
 def classify_b4(argv: list[str]) -> bool:
-    """True if this b4 invocation can send mail and must be blocked."""
+    """True if this b4 invocation can send mail and must be blocked (conservative:
+    an alarm may over-block, never under-block)."""
     sub, rest = b4_subcommand(argv)
-    opts = {a.split("=", 1)[0] for a in rest if a.startswith("-")}
     if sub == "send":
         return True
     if sub == "ty":
-        return bool(opts & TY_SEND)
+        return _has_option(rest, "S", TY_SEND_LONG)
     if sub == "pr":
-        return bool(opts & PR_SEND)
+        return _has_option(rest, "es", PR_SEND_LONG)
     return False
 
 

@@ -26,9 +26,10 @@ class ClassifyTest(unittest.TestCase):
                    ["send", "--reflect"], ["send", "--web-auth-new"], ["-d", "send"],
                    ["-c", "a=b", "send"], ["ty", "-S"], ["ty", "--send-email"],
                    ["pr", "-e"], ["pr", "--explode"], ["pr", "-s", "me"],
-                   ["pr", "--send-as-identity=me"]]
+                   ["pr", "--send-as-identity=me"], ["ty", "-aS"], ["ty", "--send"],
+                   ["ty", "--send-em"], ["--conf", "k=v", "send"], ["-c", "k=v", "ty", "-S"]]
         allowed = [["prep", "-n", "x"], ["prep", "--check"], ["am", "msgid"], ["ty"],
-                   ["pr", "msgid"], ["trailers", "-u"], [], ["--version"],
+                   ["ty", "-a"], ["pr", "msgid"], ["trailers", "-u"], [], ["--version"],
                    ["prep", "--show-info"], ["shazam", "send"]]
         for argv in blocked:
             self.assertTrue(outbound_guard.classify_b4(argv), argv)

@@ -109,17 +109,19 @@ def read_rows(path: str) -> list[dict]:
 
 
 def summarise(rows: list[dict], scenarios: dict[str, dict]) -> dict[tuple[str, str], str]:
-    """Latest result per (scenario, agent): pass, FAIL or obsolete."""
+    """Latest current result per (scenario, agent): pass or FAIL; "obsolete" only
+    when every row for it was recorded against an older version of the scenario."""
     out: dict[tuple[str, str], str] = {}
     for row in rows:
+        key = (row["scenario"], row["agent"])
         current = scenarios.get(row["scenario"])
         if current is None or scenario_hash(current) != row.get("scenario_sha256"):
-            state = "obsolete"
-        else:
-            state = "pass" if row["pass"] else "FAIL"
-            if row.get("audit", {}).get("ok") is False:
-                state = "FAIL (audit)"
-        out[(row["scenario"], row["agent"])] = state
+            out.setdefault(key, "obsolete")
+            continue
+        state = "pass" if row["pass"] else "FAIL"
+        if row.get("audit", {}).get("ok") is False:
+            state = "FAIL (audit)"
+        out[key] = state
     return out
 
 

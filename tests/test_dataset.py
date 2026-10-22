@@ -81,6 +81,13 @@ class SchemaTest(unittest.TestCase):
         self.assertTrue(any("duplicate id" in e for e in self.errors(accepted(), accepted())))
         self.assertEqual(vd.validate({}), ["dataset must be a JSON list"])
 
+    def test_malformed_types_are_findings_not_crashes(self):
+        errs = self.errors(accepted(id=[]), accepted(id="x", kind=["a"], split={}, tree=1),
+                           accepted(id="y", expected={"must_fire": 3, "must_not_error": True}))
+        self.assertTrue(any("id must" in e for e in errs))
+        self.assertTrue(any("kind must" in e for e in errs))
+        self.assertTrue(any("must_fire" in e for e in errs))
+
     def test_script_codes_allowed_in_must_fire(self):
         case = rejected(expected={"must_fire": ["FIXES_TITLE_MISMATCH"], "must_not_error": False})
         self.assertEqual(self.errors(case), [])
