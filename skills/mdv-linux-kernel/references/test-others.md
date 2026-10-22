@@ -25,17 +25,30 @@ the patchwork page usually says which tree):
 
 ```
 git switch -c test/<short-name> net-next/main      # or the tree named in the series
-b4 shazam <message-id>                              # applies the whole series
+b4 shazam -T <message-id>                           # applies the series exactly as posted
 git log --oneline -<N>                              # check every patch is there
 ```
 
-Before the first `b4 shazam`, look at what b4 and git will do:
-- `git config --get-regexp '^b4\.'`: settings that run `git am` with extra
-  flags or update patchwork state (`pw-review-state` and friends) act
-  outside your machine or add trailers. Do not run with them unless the
-  human set them up on purpose.
-- do not use `b4 shazam -M` (it makes a merge commit with a sign-off) and
-  do not pass `-s` to anything: a test branch needs no sign-off.
+`-T` (`--no-add-trailers`) matters: by default b4 collects the
+`Reviewed-by`/`Tested-by`/`Acked-by` tags from the replies and writes them
+into the commits, and the agent never adds attestation tags (rule 4).
+
+Before the first `b4 am` or `b4 shazam`, check the configuration, and stop
+if any of these is set (the human can unset it, or run the command
+themselves; a configured setting never unlocks rules 1–4):
+
+```
+git config --get-regexp '^b4\.(pw-|shazam-am-flags|shazam-merge-flags)'
+git config --get-regexp '^am\.'
+```
+
+- `b4.pw-review-state` (and the other `b4.pw-*` keys) makes `b4 am` and
+  `b4 shazam` log in to patchwork and change the state of the patches on
+  the server;
+- `b4.shazam-am-flags` passes extra flags to `git am` (for example `-s`,
+  which adds a sign-off); `git config am.*` can do the same;
+- `b4.shazam-merge-flags` defaults to `--signoff`: never use
+  `b4 shazam -M` (merge), and never pass `-s` to `b4` or `git am`.
 
 If it does not apply, say so on the list (which base you tried, the
 conflict) instead of fixing it up yourself: a hand-merged patch is not

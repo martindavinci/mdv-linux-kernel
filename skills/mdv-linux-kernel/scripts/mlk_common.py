@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from typing import Callable
 
 TRAILER_RE = re.compile(r"^([A-Za-z-]+):\s*(.+?)\s*$")
+KEY_ONLY_RE = re.compile(r"^([A-Za-z-]+):\s*$")  # folded trailer: value on the next lines
 B4_TRACKING = "--- b4-submit-tracking ---"
 
 # Exit codes shared by every script.
@@ -144,17 +145,29 @@ def split_message(message: str) -> tuple[str, list[str], list[str]]:
 def _is_trailer_block(para: list[str]) -> bool:
     """All 'Key: value' lines, allowing '[maintainer notes]' and indented continuations."""
     has_trailer = False
-    for line in para:
-        if TRAILER_RE.match(line):
+    for i, line in enumerate(para):
+        folded = KEY_ONLY_RE.match(line) and i + 1 < len(para) and para[i + 1][:1].isspace()
+        if TRAILER_RE.match(line) or folded:
             has_trailer = True
         elif not (line[:1].isspace() or (line.startswith("[") and line.endswith("]"))):
             return False
     return has_trailer
 
 
+def unfold(lines: list[str]) -> list[str]:
+    """Join indented continuation lines to the line before (folded trailers)."""
+    out: list[str] = []
+    for line in lines:
+        if line[:1].isspace() and out:
+            out[-1] = f"{out[-1].rstrip()} {line.strip()}"
+        else:
+            out.append(line)
+    return out
+
+
 def trailers(message: str) -> list[tuple[str, str]]:
     out = []
-    for line in split_message(message)[2]:
+    for line in unfold(split_message(message)[2]):
         m = TRAILER_RE.match(line)
         if m:
             out.append((m.group(1), m.group(2).strip()))

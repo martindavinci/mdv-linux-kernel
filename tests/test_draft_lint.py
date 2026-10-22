@@ -43,6 +43,18 @@ class DraftLintTest(unittest.TestCase):
         for text in ("-----BEGIN OPENSSH PRIVATE KEY-----", "token ghp_" + "a" * 36,
                      "password = hunter2", "AKIAABCDEFGHIJKLMNOP", "> api_key: abcd1234"):
             self.assertIn("SECRET", codes(text), text)
+        found = [f for f in draft_lint.lint("ok\npassword = hunter2\n", "reply") if f.code == "SECRET"]
+        self.assertEqual(found[0].detail, "line 2")  # the secret is never echoed
+        self.assertNotIn("hunter2", found[0].message)
+
+    def test_folded_attestation(self):
+        self.assertEqual(codes("Thanks.\n\nReviewed-by:\n  Me <me@example.org>\n"),
+                         ["ATTESTATION_IN_DRAFT"])
+
+    def test_ipv6(self):
+        self.assertEqual(codes("peer 2a00:1450:4001:82a::200e answered\n"), ["REDACT_IP"])
+        self.assertEqual(codes("doc example 2001:db8::1 and fe80::1 and ::1\n"), [])
+        self.assertEqual(codes("at 12:34:56 the link went down\n"), [])
 
     def test_redaction_hints(self):
         text = ("eth0: link up, addr 3c:52:82:aa:bb:cc\n"

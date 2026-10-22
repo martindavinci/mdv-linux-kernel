@@ -48,6 +48,14 @@ class CheckStableTest(unittest.TestCase):
         self.commit(f'Fixes: {self.base[:12]} ("init")\nTo: stable@vger.kernel.org\n{SOB}')
         self.assertEqual(self.run_check(), (1, ["STABLE_AS_LIST"]))
 
+    def test_unpaired_brackets_and_bare_noautosel(self):
+        fixes = f'Fixes: {self.base[:12]} ("init")'
+        for cc in ("Cc: <stable@vger.kernel.org # 6.6.x", "Cc: stable@vger.kernel.org>",
+                   "Cc: stable+noautosel@kernel.org"):
+            self.repo.git("reset", "-q", "--hard", self.base)
+            self.commit(f"{fixes}\n{cc}\n{SOB}")
+            self.assertEqual(self.run_check(), (1, ["STABLE_FORMAT"]), cc)
+
     def test_backport_markers(self):
         self.commit(f"commit {self.upstream} upstream.\n\nBody.", body="Body.")
         self.assertEqual(self.run_check("--backport"), (0, []))

@@ -27,8 +27,11 @@ import sys
 import mlk_common
 from mlk_common import Finding
 
-STABLE_ADDR = r"<?stable(?:\+noautosel)?@(?:vger\.)?kernel\.org>?"
-STABLE_RE = re.compile(rf"^{STABLE_ADDR}(?:\s+#\s*\S.*)?$")
+ADDR = r"stable@(?:vger\.)?kernel\.org"
+NOAUTOSEL = r"stable\+noautosel@kernel\.org"
+# Brackets come in pairs; noautosel must give its reason ("# reason goes here").
+STABLE_RE = re.compile(rf"^(?:<{ADDR}>|{ADDR})(?:\s+#\s*\S.*)?$")
+NOAUTOSEL_RE = re.compile(rf"^(?:<{NOAUTOSEL}>|{NOAUTOSEL})\s+#\s*\S.*$")
 UPSTREAM_RES = [re.compile(r"^commit ([0-9a-f]{40}) upstream\.?\s*$", re.M),
                 re.compile(r"^\[\s*Upstream commit ([0-9a-f]{40})\s*\]\s*$", re.M)]
 
@@ -45,11 +48,12 @@ def check(repo: str, rev_range: str, backport: bool) -> list[Finding]:
                     "STABLE_AS_LIST", "warn",
                     f"'{key}:' with the stable address: use a 'Cc: stable@vger.kernel.org' "
                     "trailer in the sign-off area", commit=sha, detail=f"{key}: {value}"))
-            elif not STABLE_RE.match(value):
+            elif not (STABLE_RE.match(value) or NOAUTOSEL_RE.match(value)):
                 findings.append(Finding(
                     "STABLE_FORMAT", "warn",
                     "Cc: stable line not in a documented form, e.g. "
-                    "'Cc: stable@vger.kernel.org', 'Cc: <stable@vger.kernel.org> # 6.6.x'",
+                    "'Cc: stable@vger.kernel.org', 'Cc: <stable@vger.kernel.org> # 6.6.x', "
+                    "'Cc: <stable+noautosel@kernel.org> # <reason>'",
                     commit=sha, detail=f"{key}: {value}"))
         has_cc = any(k.lower() == "cc" for k, _ in stable)
         noautosel = any("noautosel" in v for _, v in stable)

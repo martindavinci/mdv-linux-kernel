@@ -30,7 +30,8 @@ from mlk_common import Finding
 
 KINDS = ["report", "review", "test", "reply"]
 REPLY_KINDS = {"review", "test", "reply"}
-ATTEST_RE = re.compile(r"^\s*(Reviewed-by|Tested-by|Acked-by|Signed-off-by)\s*:\s*\S", re.I)
+# Also a folded trailer, whose value is on the next line.
+ATTEST_RE = re.compile(r"^\s*(Reviewed-by|Tested-by|Acked-by|Signed-off-by)\s*:", re.I)
 SECRET_RES = [re.compile(p) for p in (
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     r"\bghp_[A-Za-z0-9]{30,}",
@@ -43,6 +44,7 @@ SECRET_RES = [re.compile(p) for p in (
 )]
 MAC_RE = re.compile(r"\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b")
 IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+IPV6_RE = re.compile(r"(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![0-9A-Fa-f:])")
 HOME_RE = re.compile(r"(?:/home/|/Users/|[A-Za-z]:\\Users\\)([^/\\\s]+)")
 SERIAL_RE = re.compile(r"(?i)\bserial(?:[ _-]?(?:number|no))?\s*[:=]\s*\S+")
 MD_RES = [re.compile(p) for p in (r"^#{2,6}\s", r"\*\*[^*\n]+\*\*", r"^\s*```")]
@@ -63,6 +65,13 @@ def public_ipv4(text: str) -> bool:
                 or ip.is_multicast or ip.is_reserved or documentation)
 
 
+def public_ipv6(text: str) -> bool:
+    try:
+        return ipaddress.IPv6Address(text).is_global  # documentation 2001:db8:: is not
+    except ValueError:
+        return False
+
+
 def lint(text: str, kind: str) -> list[Finding]:
     findings: list[Finding] = []
     lines = text.replace("\r\n", "\n").split("\n")
@@ -72,7 +81,10 @@ def lint(text: str, kind: str) -> list[Finding]:
 
     for n, line in enumerate(lines, 1):
         if any(r.search(line) for r in SECRET_RES):
-            add("SECRET", "error", "looks like a secret: remove it before sending", n, line)
+            # Never repeat the secret itself: output ends up in logs and transcripts.
+            findings.append(Finding("SECRET", "error",
+                                    "looks like a secret: remove it before sending",
+                                    detail=f"line {n}"))
         if line.lstrip().startswith(">"):
             continue
         if ATTEST_RE.match(line):
@@ -86,6 +98,10 @@ def lint(text: str, kind: str) -> list[Finding]:
         for ip in IPV4_RE.findall(line):
             if public_ipv4(ip):
                 add("REDACT_IP", "warn", f"public IP address {ip}: mask it if it is yours", n, line)
+        for ip in IPV6_RE.findall(line):
+            if public_ipv6(ip):
+                add("REDACT_IP", "warn", f"public IPv6 address {ip}: mask it if it is yours",
+                    n, line)
         m = HOME_RE.search(line)
         if m:
             add("REDACT_HOME", "warn", f"home directory path with user name '{m.group(1)}'",

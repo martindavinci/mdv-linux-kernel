@@ -150,13 +150,19 @@ def check(repo: str, rev_range: str, series: str | None = None) -> list[Finding]
             record = records.pop(0)
             for value in (remaining - Counter(record["sob"])).elements():
                 findings.append(_sob_added(sha, value, "not present on this patch in the snapshot"))
-            if "attest" in record:  # snapshots before 0.3.0 did not record them
+            if "attest" in record:
                 for value in (attest - Counter(record["attest"])).elements():
                     findings.append(Finding(
                         "ATTESTATION_ADDED", "error",
                         "attestation trailer added after the snapshot; only the person named "
                         "may give it, and only the human adds it (git am / b4 trailers -u)",
                         commit=sha, detail=value))
+            elif attest:  # snapshot from before 0.3.0: cannot tell what is new
+                findings.append(Finding(
+                    "ATTESTATION_UNVERIFIED", "warn",
+                    "snapshot predates attestation tracking: the human must confirm each "
+                    "Reviewed-by/Tested-by/Acked-by, then take a new snapshot",
+                    commit=sha, detail="; ".join(attest.elements())))
         else:
             if remaining:
                 findings.append(Finding(

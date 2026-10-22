@@ -111,6 +111,12 @@ class DocsDiagnosticsTest(unittest.TestCase):
         base = build_warnings.parse_diagnostics(self.BASE)
         self.assertEqual(build_warnings.new_diagnostics(base, build_warnings.parse_diagnostics(moved)), [])
 
+    def test_checkout_under_a_tree_named_directory(self):
+        a = "/home/me/kernel/base/Documentation/x.rst:3: WARNING: Title underline too short.\n"
+        b = a.replace("/kernel/base/", "/kernel/patched/")
+        self.assertEqual(build_warnings.new_diagnostics(build_warnings.parse_diagnostics(a),
+                                                        build_warnings.parse_diagnostics(b)), [])
+
     def test_new_sphinx_warning(self):
         patched = self.BASE + ("/home/a/net-next/Documentation/networking/foo.rst:40: ERROR: "
                                "Unexpected indentation.\n")

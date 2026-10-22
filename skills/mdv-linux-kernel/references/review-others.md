@@ -28,12 +28,15 @@ thread first (lore, Message-ID) so you do not repeat a comment already
 made, and look at the latest version.
 
 ```
-b4 am -o "$STATE/review" <message-id>     # downloads the series as an mbox, applies nothing
+b4 am -T -o "$STATE/review" <message-id>  # downloads the series as posted, applies nothing
 git switch -c review/<short-name> <base>
 git am "$STATE/review"/*.mbx              # optional: to build and read it in context
 ```
 
-`git am` here must not add sign-offs (no `-s`, check `git config am.*`).
+`-T` keeps the series as the author sent it, without the tags others gave
+in replies. Check the configuration first, as in
+`references/test-others.md` (section 1): no `b4.pw-*` settings (they
+update patchwork), and nothing that makes `git am` add a sign-off.
 
 ## 2. Read it with the human
 

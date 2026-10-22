@@ -58,10 +58,14 @@ Before writing any code, find out which case it is:
 1. **Already there?** Search the stable branch for the upstream subject
    and for an equivalent fix: `git log --oneline v6.6.50.. -- <files>`,
    `git log --grep='<subject>' stable/linux-6.6.y`.
-2. **Not applicable?** Does the buggy code exist in that version? Check
-   the commit named in `Fixes:`: `git merge-base --is-ancestor <sha>
-   stable/linux-6.6.y`. If it is not there, reply that the series is not
-   affected, with that evidence.
+2. **Not applicable?** Does the buggy code exist in that version? The
+   commit named in `Fixes:` may be an ancestor
+   (`git merge-base --is-ancestor <sha> stable/linux-6.6.y`), but it may
+   also have been backported under a different SHA, so its absence proves
+   nothing: search for it by subject
+   (`git log --oneline --grep='<culprit subject>' stable/linux-6.6.y`) and
+   read the code the fix changes in that branch. Reply "not affected" only
+   when the buggy code is not there, and show how you checked.
 3. **Missing prerequisites?** Find the upstream commits the fix depends on
    (`git log` on the touched lines between the series and the fix). Small,
    clearly needed prerequisites can be listed; anything bigger is a

@@ -71,7 +71,14 @@ and use an object being freed.
 
 Two answers from the same document:
 - Take the lock that protects the table, find the entry, `kref_get()`,
-  unlock. Teardown removes the entry under the same lock.
+  unlock; and make the *final* put serialised with that lookup too, so the
+  count cannot reach zero while another CPU is between finding the entry
+  and getting its reference. `kref_put_mutex()` / `kref_put_lock()` do
+  this: they take the lock only when the count drops to zero and call the
+  release (which unlinks the entry) with it held. Taking the lock only
+  inside the release function is too late: the count is already zero and
+  a concurrent lookup can still find the entry. Another common design is
+  that the table itself holds a reference until the entry is unlinked.
 - Use `kref_get_unless_zero()`. Its return value must be checked, and the
   call must be in the same critical section that finds the entry in the
   table. With RCU lookups, the release function must free with
