@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="mdv-linux-kernel: a Leonardo-style mechanical penguin checking a patch" width="240">
+</p>
+
 # mdv-linux-kernel
 
 An Agent Skill that mentors people sending their first Linux kernel patches,
