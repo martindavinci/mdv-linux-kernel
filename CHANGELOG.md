@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (2026-10-27)
+
+Docs
+- An icon at the top of the README: a Leonardo-style mechanical penguin
+  checking a patch.
+
 ## 0.3.0 (2026-10-22)
 
 Skill
