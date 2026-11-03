@@ -4,6 +4,8 @@
 
 # mdv-linux-kernel
 
+[![CI](https://github.com/martindavinci/mdv-linux-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/martindavinci/mdv-linux-kernel/actions/workflows/ci.yml)
+
 An Agent Skill that mentors people sending their first Linux kernel patches,
 with networking (netdev) supported in depth.
 
