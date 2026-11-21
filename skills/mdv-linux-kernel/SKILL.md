@@ -171,6 +171,10 @@ private channel; explain the rules that apply, read from the tree.
 ## Phase map
 
 Work out where the human is, then load only the references for that phase.
+Inside a series, `python3 <skill-dir>/scripts/mlk.py next` computes it from
+the recorded state (evidence, notes, policy snapshot, sign-offs, review
+tracker): the phase, what blocks and the next step with who runs it. Trust
+it over your own reading of the state; explain it, do not round it up.
 
 | Phase | Command | When | Read |
 |---|---|---|---|
@@ -203,7 +207,7 @@ subsystem's MAINTAINERS entry and `maintainer-*.rst` (if any). Say so.
 ## Commands
 
 Optional shortcuts. When the first word after the skill's name is a command
-from the phase map, or `status` or `help`, go straight to that phase:
+from the phase map, or `status`, `report` or `help`, go straight to that phase:
 `/mdv-linux-kernel validate` (Claude Code), `$mdv-linux-kernel validate`
 (Codex). The rest of the text is its argument
 (`explain merge window`, `review-patch <lore link>`).
@@ -220,9 +224,13 @@ from the phase map, or `status` or `help`, go straight to that phase:
   human to use a command.
 - `help`: list the commands, one line each, in the human's language, and
   say that plain requests work as well. Run nothing.
-- `status`: where the work stands, read-only: `evidence.py where` and
-  `status` (or "no evidence store yet"), the policy snapshot findings, and
-  the next phase on the minimum path.
+- `status`: where the work stands, read-only: run `mlk.py next` and explain
+  its phase, blockers and next step (outside a kernel checkout or series,
+  say so).
+- `report`: run `mlk.py report` and give the human the path of the local
+  HTML page (state, next step, checks, confirmations, review comments, each
+  patch with its diff). Never upload or publish it: the patch may be under
+  embargo.
 
 ## Explanation level
 
@@ -262,6 +270,10 @@ from the phase map, or `status` or `help`, go straight to that phase:
 | `scripts/draft_lint.py` | `FILE --kind report\|review\|test\|reply`: attestation lines, secrets, data to mask, Markdown, top-posting, missing summary in drafts the human sends. |
 | `scripts/check_stable.py` | `Cc: stable` forms, `Fixes:` with stable, and with `--backport` the upstream commit line. |
 | `scripts/learner_profile.py` | Optional local profile: explanation level, language, concepts explained (`show`, `init`, `add-concept`, `reset`, ...). |
+| `scripts/mlk.py` | `next`: phase, blockers and next step from the recorded state (`--json`); `report`: local self-contained HTML page of the series. |
+| `scripts/preflight.py` | `DIR [--netdev] [--repo K --maintainers]`: the outgoing mails from `b4 prep -p` (agent) or `b4 send -o` (human): numbering, versions, plain text, netdev rules, threading, recipients vs `get_maintainer.pl`. |
+| `scripts/review_tracker.py` | Review comments of a posted series: `import` an mbox, `list`, `propose` (agent), `confirm` (human's words), `status`, `changelog`, `skeleton`. |
+| `scripts/nipa_results.py` | Reads a local netdev CI (NIPA) result dir: `ingest_mdir.py` exits 0 even when tests fail. |
 
 Note keys for `evidence.py note`: `comprehension`, `external_review`,
 `policy`, `security_screen`, `disclosure`, `human_confirmations`. Notes
@@ -310,3 +322,5 @@ phase:
    changed". Re-run the quick ones (checkpatch, commit-msg-lint,
    fixes-tags); for an external review, re-run or ask the human to
    confirm (`references/submit.md`).
+4. Run `python3 <skill-dir>/scripts/mlk.py next`: hand over for sending
+   only when it says `ready`; otherwise name what still blocks.

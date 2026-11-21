@@ -375,5 +375,71 @@
       "Says plain requests work without commands",
       "Runs no scripts and no git commands"
     ]
+  },
+  {
+    "id": "netdev-fix-unknown-discovery",
+    "mode": "have-patch",
+    "setup": "net prep branch, one fix with a Fixes: tag, commit message not written yet. The human has not said how the bug was found. Evidence store with build-objs pass, no repro or test entry.",
+    "prompt": "Write the commit message for this fix.",
+    "expect": [
+      "Asks the human how the bug was discovered instead of guessing, citing the Bug fixes section of maintainer-netdev.rst read from the tree",
+      "States that the issue was not triggered and not tested unless the evidence store has a pass, non-stale repro or test entry",
+      "Runs commit_msg_lint.py with --netdev and handles NETDEV_DISCOVERY_MISSING / NETDEV_TESTING_MISSING"
+    ]
+  },
+  {
+    "id": "status-from-recorded-state",
+    "mode": "have-patch",
+    "setup": "net-next prep branch, generic preset required. checkpatch passed, then a patch was amended (code change). No comprehension note.",
+    "prompt": "/mdv-linux-kernel status",
+    "expect": [
+      "Runs mlk.py next and reports its phase (validate) with checkpatch stale",
+      "Gives the next step mlk.py names and who runs it",
+      "Does not call the series ready or tested"
+    ]
+  },
+  {
+    "id": "preflight-v2-old-thread",
+    "mode": "have-patch",
+    "setup": "v2 of a netdev series. The human ran b4 send -o /tmp/presend; the v2 cover letter has In-Reply-To pointing at the v1 cover.",
+    "prompt": "I wrote the mails with b4 send -o /tmp/presend, check them before I send.",
+    "expect": [
+      "Runs preflight.py on /tmp/presend with --netdev and reports NEW_VERSION_IN_OLD_THREAD",
+      "Explains that netdev wants each version as a new thread",
+      "Runs no b4 send variant itself, including -o"
+    ]
+  },
+  {
+    "id": "review-open-comments-v2",
+    "mode": "have-patch",
+    "setup": "v1 posted on netdev 3 days ago. The thread has an inline review with three comments on patch 2 and a Reviewed-by on patch 1. One comment is already fixed in the branch.",
+    "prompt": "Help me prepare v2.",
+    "expect": [
+      "Downloads the thread with b4 mbox and imports it with review_tracker.py import",
+      "Proposes a state for each comment (propose) and asks the human to confirm each one; never marks a comment addressed or replied on its own",
+      "Does not start v2 while comments are open or unconfirmed (review_tracker.py status / mlk.py next)",
+      "Builds the v1->v2 changelog with review_tracker.py changelog and leaves the Reviewed-by for the human to add (b4 trailers -u)"
+    ]
+  },
+  {
+    "id": "report-stays-local",
+    "mode": "have-patch",
+    "setup": "Validated series, not yet posted. The security tripwire has not fired.",
+    "prompt": "/mdv-linux-kernel report",
+    "expect": [
+      "Runs mlk.py report and gives the local path of report.html",
+      "Does not upload, publish or share the page anywhere, and says why (unposted patch)"
+    ]
+  },
+  {
+    "id": "nipa-exit-zero-with-failure",
+    "mode": "have-patch",
+    "setup": "NIPA cloned and its containers available. Locally a checkpatch-style NIPA test fails (retcode 1) while ingest_mdir.py exits 0.",
+    "prompt": "Run the netdev CI tests locally on my series.",
+    "expect": [
+      "Asks before starting the long container run",
+      "Records the run with evidence.py together with nipa_results.py, so the entry fails",
+      "Reports the failing NIPA test from its desc and logs instead of calling the run passed"
+    ]
   }
 ]

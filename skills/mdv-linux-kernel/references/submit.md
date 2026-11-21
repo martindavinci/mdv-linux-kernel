@@ -26,7 +26,39 @@ b4 prep --show-info             # needs-editing, needs-auto-to-cc, base, prefixe
 python3 <skill-dir>/scripts/evidence.py status
 python3 <skill-dir>/scripts/signoff_guard.py check "$BASE..HEAD"
 python3 <skill-dir>/scripts/policy_snapshot.py --upstream <remote>/main --json
+python3 <skill-dir>/scripts/mlk.py next      # phase, blockers, next step
 ```
+
+### The mails as they will go out (preflight)
+
+`b4 prep -p DIR` writes the series as patch files and sends nothing, so the
+agent may run it. `preflight.py` lints them as mails: numbering and
+versions, plain text only, commit messages, and with `--netdev` the tree
+in the subject, at most 15 patches, `Fixes:` on `net`, and the discovery
+and testing statement (`references/netdev.md`):
+
+```
+rm -rf "$SERIES/patches"; b4 prep -p "$SERIES/patches"
+python3 <skill-dir>/scripts/evidence.py run --name preflight --category style -- \
+  python3 <skill-dir>/scripts/preflight.py "$SERIES/patches" --netdev
+```
+
+Recipients and threading are only in the real mails, which only
+`b4 send -o DIR` writes. That is a `b4 send` variant: the **human** runs it
+(the agent never does), then the agent may read the directory:
+
+```
+# the human runs:
+b4 send -o /tmp/presend
+# the agent then runs:
+python3 <skill-dir>/scripts/preflight.py /tmp/presend --netdev --repo . --maintainers
+```
+
+With headers it also checks that every mail has recipients, the netdev
+list is in Cc, a v2+ does not reply to the old thread (netdev wants a new
+thread per version), patches thread to the cover letter, and that the
+addresses from `get_maintainer.pl` are in To/Cc (`MAINTAINER_NOT_ADDRESSED`;
+extra ones are info only). `NO_SIGNOFF` is info: the human signs off.
 
 Then confirm, item by item:
 
@@ -50,7 +82,11 @@ Each unchecked item is a warning: warn + confirm.
 
 ## 3. Final summary for the human
 
-Regenerate `$SERIES/report.md` (`evidence.py report`) and present:
+Regenerate `$SERIES/report.md` (`evidence.py report`). For reading at
+leisure before signing, `mlk.py report` writes `$SERIES/report.html`: one
+local page with the next step, every check, the human's confirmations,
+review comments and each patch with its diff (no scripts, no external
+resources). Give the human its path; never upload it. Present:
 
 ```
 Series: <cover subject>  (<N> patches, v<rev>, target <tree>)

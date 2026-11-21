@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+Skill
+- netdev bug fixes: the discovery and testing statement that
+  `maintainer-netdev.rst` now asks for. The agent asks how the bug was
+  found and, by default, writes "not triggered / not tested" unless the
+  evidence store shows otherwise.
+- `status` is computed from the recorded state (`mlk.py next`), and the
+  new `report` command writes a local HTML page of the series.
+- Preflight of the outgoing mails before the human sends.
+- Revise: review comments tracked one by one; open comments block the
+  next version.
+- Validate: the netdev CI run locally with the NIPA containers.
+
+Scripts
+- `mlk.py`: `next` walks the phase gates over evidence, notes, policy
+  snapshot, sign-offs and the review tracker, and names the next step and
+  who runs it (anything that signs or sends is the human's). Warnings stop
+  blocking once a `human_confirmations` note names them. `report` writes a
+  self-contained page (no scripts, no external resources, all escaped).
+- `preflight.py`: lints `b4 prep -p` output (agent) or `b4 send -o` output
+  (human): numbering, versions, plain text, commit messages, netdev rules,
+  threading, recipients against `get_maintainer.pl`.
+- `review_tracker.py`: imports a review thread (`b4 mbox`), anchors each
+  comment to patch, file and hunk; the agent proposes a state, the human
+  confirms it; `status`, the 24-hour rule, the vN changelog and reply
+  skeletons.
+- `nipa_results.py`: reads NIPA's per-test `retcode` files, since
+  `ingest_mdir.py` exits 0 when tests fail.
+- `commit_msg_lint.py --netdev`: `NETDEV_DISCOVERY_MISSING`,
+  `NETDEV_TESTING_MISSING` for commits with `Fixes:`.
+
+Evals
+- Scenarios: discovery statement, status from recorded state, preflight of
+  a v2 in the old thread, review comments before v2, the report stays
+  local, a NIPA failure behind exit code 0.
+
 ## 0.4.0 (2026-11-21)
 
 Skill

@@ -35,13 +35,13 @@ missing understanding. This skill attacks those two things.
 | Setup | Checks the environment (`env_check.py`), guides installing the toolchain, b4, virtme-ng, sparse and so on, cloning `net`/`net-next`, and the sending setup. |
 | Find work | Proposes real work (syzbot, regressions, explicit TODOs). It checks each candidate for existing fixes, reproducibility, hardware needs and difficulty, and steers away from standalone cleanups. |
 | Develop | The AI can co-write the code and explains each change as it goes. For bugs it walks through reading the report, reproducing, bisecting to the culprit commit and writing a regression test. |
-| Validate | Runs checkpatch, `W=1 C=1` builds, the netdev build minimum compared against a baseline build, static analysers, kselftest/KUnit and virtme-ng. Every result is stored per series with the exact state it ran on (`evidence.py`): required checks that were never run show as missing, test output and kernel splats are read rather than trusting the exit code, and anything changed afterwards is marked stale (builds and tests survive message-only changes such as the sign-off). |
+| Validate | Runs checkpatch, `W=1 C=1` builds, the netdev build minimum compared against a baseline build, static analysers, kselftest/KUnit, virtme-ng and the netdev CI run locally (NIPA containers, read back by `nipa_results.py` since NIPA exits 0 on failures). Every result is stored per series with the exact state it ran on (`evidence.py`): required checks that were never run show as missing, test output and kernel splats are read rather than trusting the exit code, and anything changed afterwards is marked stale (builds and tests survive message-only changes such as the sign-off). |
 | External review | Optionally runs review-prompts and/or Sashiko as independent reviewers. Each finding must be fixed or answered. |
-| Slop gate | Commit message lint, `Fixes:` verification, maintainers' slop indicators, churn check, recipients. |
+| Slop gate | Commit message lint (on netdev, the bug-fix discovery and testing statement), `Fixes:` verification, maintainers' slop indicators, churn check, recipients. |
 | Comprehension | Asks the human targeted questions about the patch. Skipping them needs a strong warning and an explicit written confirmation. |
 | Disclosure | Follows the target tree. With current mainline that means a transparency note in the cover letter, per `generated-content.rst`. |
-| Sign-off and submit | Explains the DCO. The **human** signs off and sends. The skill prepares the commands and the final evidence summary. |
-| Revise | Collects review feedback, maps comments to changes or replies, handles trailers and the vN lifecycle. |
+| Sign-off and submit | Explains the DCO. The **human** signs off and sends. The skill prepares the commands and the final evidence summary, lints the outgoing mails (`preflight.py`: numbering, plain text, netdev rules, threading, recipients against `get_maintainer.pl`) and can write a local HTML report of the series. |
+| Revise | Imports the review thread (`review_tracker.py`) and tracks every comment: the agent proposes how it was handled, the human confirms, and open comments block the next version. Generates the changelog for the cover letter, handles trailers and the vN lifecycle. |
 | Beyond your own patch | Reporting a bug or regression (routing, regzbot, masking personal data), testing and reviewing other people's patches, stable tags and backports (advanced), documentation patches. |
 
 ### Rules the skill never breaks
@@ -154,7 +154,8 @@ skip no check and no rule: plain requests do the same.
 | `test-patch` / `review-patch` | test or review someone else's patch |
 | `stable` | stable tags and backports |
 | `docs` | documentation patches |
-| `status` | where the series stands and what comes next |
+| `status` | where the series stands and what comes next, computed from the recorded state (`mlk.py next`) |
+| `report` | a local HTML page of the series: next step, checks, confirmations, diffs |
 | `help` | this list |
 
 The skill talks to you in your language. Everything that goes upstream
