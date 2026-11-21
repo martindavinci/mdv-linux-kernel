@@ -177,6 +177,35 @@ total count of warning/error lines (`baseline_count`, `patched_count`): a
 higher count fails even if no single line could be attributed.
 A baseline log stays usable as long as `BASE` does not change.
 
+### netdev CI locally (NIPA)
+
+netdev expects the same tests as its CI to pass before posting, not after
+(`maintainer-netdev.rst`; Matthieu Baerts' 2026-09 announcement on the
+list). NIPA (https://github.com/linux-netdev/nipa) has containers
+(`ghcr.io/linux-netdev/nipa-{base,build,selftests}`) and the wiki page
+"Running Netdev CI tests locally". Clone NIPA once outside the kernel tree,
+export the series as files (`b4 prep -p` sends nothing) and run:
+
+```
+NIPA=$HOME/src/nipa; KTREE=$(git rev-parse --show-toplevel)
+R="$SERIES/nipa-$(git rev-parse --short=12 HEAD)"
+rm -rf "$SERIES/patches"; b4 prep -p "$SERIES/patches"
+$E run --name nipa-ci --category test --results none --timeout 14400 -- sh -c \
+  "cd '$NIPA' && ./docker/build/run.sh --pull ./ingest_mdir.py --mdir '$SERIES/patches' \
+   --tree '$KTREE' --result-dir '$R' --noninteractive \
+   && python3 <skill-dir>/scripts/nipa_results.py '$R'"
+```
+
+(`evidence.py run` starts the command in the kernel tree, hence the `cd`.)
+
+`ingest_mdir.py` exits 0 even when tests fail; `nipa_results.py` reads the
+`retcode` file NIPA writes per test (0 okay, 250 warning, 111 pending,
+anything else failed) and fails on warnings, failures, a series that did
+not apply or an unfinished run. Treat `WARNING` like a failure unless the
+human confirms it after reading the test's `desc` and logs. The run needs
+Docker or Podman and takes long; ask before starting. It complements the
+allmodconfig/allyesconfig method above, it does not replace it.
+
 ### smatch and Coccinelle
 
 - smatch (if installed): run its kernel checker on each touched `.c` file
