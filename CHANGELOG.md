@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-22)
 
 Skill
 - netdev bug fixes: the discovery and testing statement that
