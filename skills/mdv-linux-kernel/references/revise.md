@@ -30,14 +30,39 @@ get discouraged - or impatient" in `submitting-patches.rst`, and for netdev
 
 ## 2. Map every comment
 
-Keep `$SERIES/review-v<N>.md`:
+`review_tracker.py` keeps one state per comment in `$SERIES/review.json`,
+so nothing is lost between versions:
 
 ```
-# | from | patch | comment (short) | action | status
-1 | reviewer A | 2/3 | lock not held in foo_set() | change: take rtnl in caller | done
-2 | AI review | 1/3 | possible leak on error | reply: freed in foo_free(), see line X | drafted
-3 | reviewer B | 0/3 | split cleanup out | change: new patch 1/4 | done
+RT="python3 <skill-dir>/scripts/review_tracker.py"
+b4 mbox <message-id> -o "$SERIES/thread"           # read-only download
+$RT import "$SERIES"/thread/*.mbx                    # re-import after new replies: states are kept
+$RT add --patch 2 --text "..." --source bot --author sashiko   # feedback that only exists on a web page
+$RT list --status open
 ```
+
+Import anchors each comment to its patch, file and hunk from the quoted
+diff. Top-posted text becomes one comment without a file; a mail that
+cannot be mapped is `unanchored` (check it by hand). Replies that are only
+`Reviewed-by`/`Acked-by`/`Tested-by` are listed as tags: they never block
+and the tracker never writes them anywhere; the human adds them with
+`b4 trailers -u` (section 1).
+
+States: `open` -> `proposed` -> `addressed` | `replied` | `wontfix`.
+
+- You **propose**, after checking the comment against the code:
+  `$RT propose <id> --status addressed --commit <sha> --why "take rtnl in foo_store()"`
+  (or `--status replied` / `wontfix` with the reason).
+- The **human decides**. Show each proposal; only after their explicit
+  answer run `$RT confirm <id> --words "<their words>"`. "ok" for a batch
+  is not a confirmation of each comment. Like `human_confirmations`, this
+  is recorded traceability, not a lock: never confirm on your own.
+- `$RT reopen <id> --why ...` when a later reply reopens a point.
+
+`$RT status --netdev` (and `mlk.py next`) blocks the next version while any
+comment is open, proposed or unanchored, and flags a posting less than 24
+hours old or a discussion still active. Comments arrive by mail; the netdev
+AI reviews may only be on sashiko.dev: read them there and `add` them.
 
 Each comment gets a code change or a reasoned reply; often both (the
 commit message should answer questions reviewers had to ask). Nothing is
@@ -64,6 +89,12 @@ take rtnl in foo_store() in v2.
 No, it is set in foo_probe() before register_netdev() and cleared only
 after unregister_netdev(), so foo_set() cannot see NULL.
 ```
+
+`$RT skeleton <id>` writes `$SERIES/replies/<id>.txt`: the quoted comment
+and a placeholder with its state and commit, to start from. It never
+contains trailers. Write or help with the prose only if asked, run
+`draft_lint.py --kind reply` on it, and say it was drafted with AI help if
+it was (`generated-content.rst`).
 
 The human edits and sends the reply from their own mail client. You never
 send. Reviewers who commented should be in Cc of the next version
@@ -100,7 +131,16 @@ Changes in v2:
 ```
 
 Fill it in: one terse line per change, naming the patch and who asked for
-it when relevant. Do not bump versions by hand; b4 tracks them
+it when relevant. `$RT changelog` prints a starting point from the
+confirmed `addressed` comments (`vN: https://lore.kernel.org/r/<msgid>/`
+plus one line each); edit it, then put the cover letter back without an
+editor:
+
+```
+b4 prep --show-cover > "$SERIES/cover.txt"     # edit the Changes section
+b4 prep --cover-from-file "$SERIES/cover.txt"
+```
+ Do not bump versions by hand; b4 tracks them
 (`b4 prep --show-revision`). For a single patch the changelog ends up
 below `---`. Check the diff against what was sent:
 
