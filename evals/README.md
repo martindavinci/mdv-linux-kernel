@@ -71,6 +71,9 @@ certify a session.
 | `prompt` | what the human says to the agent |
 | `expect` | behaviours that must all happen |
 
+A prompt that starts with `/mdv-linux-kernel` is sent on Codex with
+`$mdv-linux-kernel` instead.
+
 Run them as `VERIFICATION.md` describes and record each with
 `results.py record`. A row keeps the sha256 of the scenario as it was: if
 the scenario changes later, `summary` shows the old result as `obsolete`.

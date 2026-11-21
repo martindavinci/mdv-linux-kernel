@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Skill
+- Commands: optional shortcuts that jump to a phase
+  (`/mdv-linux-kernel validate`, `$mdv-linux-kernel submit`, `status`,
+  `help`, ...). They skip no check and no rule.
+
+Evals
+- Scenarios for commands: `submit` with missing evidence, `send` is not a
+  command, `help` in the human's language.
+
 ## 0.3.1 (2026-10-27)
 
 Docs

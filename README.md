@@ -131,6 +131,32 @@ Then talk normally. For example:
 - "I got review comments on v1, help me prepare v2."
 - "What is a merge window?" / "Explain less, I know the basics now."
 
+### Commands
+
+Optional shortcuts that jump straight to a phase, e.g.
+`/mdv-linux-kernel validate` (Codex: `$mdv-linux-kernel validate`). They
+skip no check and no rule: plain requests do the same.
+
+| Command | Does |
+|---|---|
+| `setup` | orientation, environment check, toolchain |
+| `find-work` | real work to pick, checked for duplicates and difficulty |
+| `develop` | write or change the code and the commit message |
+| `validate` | builds, tests and checks, recorded as evidence |
+| `ext-review` | review-prompts / Sashiko as independent reviewers |
+| `gate` | slop gate, comprehension questions, disclosure |
+| `submit` | sign-off explained, send commands prepared for you |
+| `revise` | review feedback and the next version |
+| `explain <topic>` | a concept or how a part of the kernel works |
+| `debug` | crash reports, syzbot, bisect, regression tests |
+| `build-proof` | is the code built and run at all (Kconfig, no hardware) |
+| `report-bug` | report a bug or regression |
+| `test-patch` / `review-patch` | test or review someone else's patch |
+| `stable` | stable tags and backports |
+| `docs` | documentation patches |
+| `status` | where the series stands and what comes next |
+| `help` | this list |
+
 The skill talks to you in your language. Everything that goes upstream
 (changelogs, cover letters, replies) is written in English.
 

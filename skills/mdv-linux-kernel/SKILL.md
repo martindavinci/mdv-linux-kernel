@@ -172,26 +172,26 @@ private channel; explain the rules that apply, read from the tree.
 
 Work out where the human is, then load only the references for that phase.
 
-| Phase | When | Read |
-|---|---|---|
-| 0 Orient & setup | new to kernel work, no environment, missing tools | `references/orientation.md`, `references/setup.md` |
-| 1 Find work / have patch | "what can I work on?", or an existing commit/branch/idea | `references/find-work.md` |
-| 2 Develop | writing or changing code and commit messages | `references/develop.md` |
-| 3 Validate | building, testing, collecting evidence | `references/validate.md` |
-| 4 External review (optional) | review-prompts or Sashiko installed | `references/external-review.md` |
-| 5 Slop gate + comprehension | before preparing the submission | `references/slop-gate.md`, `references/comprehension.md`, `references/disclosure.md` |
-| 6 Sign-off & submit prep | ready to hand over | `references/signoff-dco.md`, `references/submit.md` |
-| 7 Revise | feedback received, next version | `references/revise.md` |
-| Subsystem | patch touches `net/`, `drivers/net/`, netdev list | `references/netdev.md` |
-| Concepts | "what is X?", how the kernel or the stack works | `references/glossary.md`, `references/kernel-design/index.md` |
-| Debugging | crash report, syzbot bug, "where did this break?", bisect, regression test | `references/debugging.md` |
-| Build & run proof | "is my code even built/run?", Kconfig, bot build reports, no hardware | `references/build-config.md` |
-| Report a bug | "the kernel crashes / broke after upgrading", report or regression to send | `references/reporting.md` |
-| Test someone's patch | "can you help me test this series?", asked to test a fix | `references/test-others.md` |
-| Review someone's patch | "help me review this patch", learning to review | `references/review-others.md` |
-| Stable | `Cc: stable`, a "FAILED: patch failed to apply" mail, a backport (advanced) | `references/stable.md` |
-| Documentation patch | changes under `Documentation/` or kernel-doc comments | `references/docs-patches.md` |
-| Security | tripwire fired | `references/security.md` |
+| Phase | Command | When | Read |
+|---|---|---|---|
+| 0 Orient & setup | `setup` | new to kernel work, no environment, missing tools | `references/orientation.md`, `references/setup.md` |
+| 1 Find work / have patch | `find-work` | "what can I work on?", or an existing commit/branch/idea | `references/find-work.md` |
+| 2 Develop | `develop` | writing or changing code and commit messages | `references/develop.md` |
+| 3 Validate | `validate` | building, testing, collecting evidence | `references/validate.md` |
+| 4 External review (optional) | `ext-review` | review-prompts or Sashiko installed | `references/external-review.md` |
+| 5 Slop gate + comprehension | `gate` | before preparing the submission | `references/slop-gate.md`, `references/comprehension.md`, `references/disclosure.md` |
+| 6 Sign-off & submit prep | `submit` | ready to hand over | `references/signoff-dco.md`, `references/submit.md` |
+| 7 Revise | `revise` | feedback received, next version | `references/revise.md` |
+| Subsystem | - | patch touches `net/`, `drivers/net/`, netdev list | `references/netdev.md` |
+| Concepts | `explain` | "what is X?", how the kernel or the stack works | `references/glossary.md`, `references/kernel-design/index.md` |
+| Debugging | `debug` | crash report, syzbot bug, "where did this break?", bisect, regression test | `references/debugging.md` |
+| Build & run proof | `build-proof` | "is my code even built/run?", Kconfig, bot build reports, no hardware | `references/build-config.md` |
+| Report a bug | `report-bug` | "the kernel crashes / broke after upgrading", report or regression to send | `references/reporting.md` |
+| Test someone's patch | `test-patch` | "can you help me test this series?", asked to test a fix | `references/test-others.md` |
+| Review someone's patch | `review-patch` | "help me review this patch", learning to review | `references/review-others.md` |
+| Stable | `stable` | `Cc: stable`, a "FAILED: patch failed to apply" mail, a backport (advanced) | `references/stable.md` |
+| Documentation patch | `docs` | changes under `Documentation/` or kernel-doc comments | `references/docs-patches.md` |
+| Security | - | tripwire fired | `references/security.md` |
 
 Minimum path for any patch: 1 → 2 → 3 → 5 → 6. Phase 4 is optional;
 phase 7 follows every posting that gets feedback (including AI review on
@@ -199,6 +199,30 @@ netdev).
 
 For subsystems other than netdev, v1 applies the generic rules plus the
 subsystem's MAINTAINERS entry and `maintainer-*.rst` (if any). Say so.
+
+## Commands
+
+Optional shortcuts. When the first word after the skill's name is a command
+from the phase map, or `status` or `help`, go straight to that phase:
+`/mdv-linux-kernel validate` (Claude Code), `$mdv-linux-kernel validate`
+(Codex). The rest of the text is its argument
+(`explain merge window`, `review-patch <lore link>`).
+
+- A command chooses the phase, nothing more. The session start
+  ("Follow the tree"), the security tripwire, the non-overridable rules,
+  warn + confirm and the self-check apply as without it.
+- A command does not stand in for earlier phases. If `submit` or `gate`
+  runs on a series with missing, failed or stale checks, start from what
+  `evidence.py status` reports and handle each gap as a warning.
+- Any other first word is not a command: `send`, `sign-off` or `ack` are
+  ordinary requests and the rules above answer them. Without a command,
+  work out the phase from what the human says, as usual. Never ask the
+  human to use a command.
+- `help`: list the commands, one line each, in the human's language, and
+  say that plain requests work as well. Run nothing.
+- `status`: where the work stands, read-only: `evidence.py where` and
+  `status` (or "no evidence store yet"), the policy snapshot findings, and
+  the next phase on the minimum path.
 
 ## Explanation level
 
