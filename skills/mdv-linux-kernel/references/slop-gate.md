@@ -24,7 +24,7 @@ RANGE=$(b4 prep --show-info series-range)
 ### 1. Commit messages
 
 ```
-python3 <skill-dir>/scripts/commit_msg_lint.py "$RANGE"
+python3 <skill-dir>/scripts/commit_msg_lint.py "$RANGE"            # add --netdev for netdev
 ```
 
 | Code | Meaning | Usual fix |
@@ -39,6 +39,8 @@ python3 <skill-dir>/scripts/commit_msg_lint.py "$RANGE"
 | `LLM_PHRASES` | "comprehensive", "robust", "ensures that", "leverage"... | say the concrete thing, or delete the sentence |
 | `MARKDOWN` | headings, `**bold**`, code fences | plain text; indent quoted logs |
 | `BULLET_HEAVY` | many bullet lines | prose; bullets only for real lists |
+| `NETDEV_DISCOVERY_MISSING` | (`--netdev`, fixes) no word on how the bug was found and validated | ask the human; default "not triggered" (`references/netdev.md`) |
+| `NETDEV_TESTING_MISSING` | (`--netdev`, fixes) no word on how the fix was tested | state it from the evidence store; default "not tested" |
 
 Beyond the codes, read each message as a maintainer would: Does the first
 paragraph state the problem? Is there a sentence that only restates the
@@ -117,6 +119,7 @@ python3 <skill-dir>/scripts/evidence.py note --key human_confirmations \
   --value "<CODE> on <commit>: <human's words>"
 ```
 Optionally record the lint runs as evidence:
-`evidence.py run --name commit-msg-lint --category style -- python3 <skill-dir>/scripts/commit_msg_lint.py "$RANGE"`.
+`evidence.py run --name commit-msg-lint --category style -- python3 <skill-dir>/scripts/commit_msg_lint.py "$RANGE"`
+(with `--netdev` on netdev series).
 
 Next: `references/signoff-dco.md`, then `references/submit.md`.

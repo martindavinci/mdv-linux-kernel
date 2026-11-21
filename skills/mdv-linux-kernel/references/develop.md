@@ -147,6 +147,11 @@ in `maintainer-netdev.rst`. In short, as a fallback to verify there:
   say so in the commit message: `generated-content.rst` asks for that.
   How AI helped write the patch goes in the cover letter
   (`references/disclosure.md`).
+- **netdev bug fixes** also state how the issue was discovered and
+  validated and how the fix was tested. Do not write the message until
+  you know the discovery method: ask the human. Without a pass repro/test
+  entry in the evidence store, say it was not triggered / not tested
+  (`references/netdev.md`, "Bug fixes").
 
 Example shape (not content to copy):
 

@@ -95,6 +95,49 @@ class LintTest(unittest.TestCase):
         self.assertEqual(commit_msg_lint.lint_message(msg().replace("\n", "\r\n")), [])
 
 
+class NetdevFixTest(unittest.TestCase):
+    STATEMENT = ("\n\nFound by code inspection; the issue was not triggered. Not tested "
+                 "beyond a W=1 build.")
+
+    def codes(self, message: str) -> list[str]:
+        return sorted(f.code for f in commit_msg_lint.netdev_fix_findings(message))
+
+    def test_fix_without_statements(self):
+        self.assertEqual(self.codes(msg()),
+                         ["NETDEV_DISCOVERY_MISSING", "NETDEV_TESTING_MISSING"])
+
+    def test_fix_with_statements(self):
+        self.assertEqual(self.codes(msg(body=BODY + self.STATEMENT)), [])
+
+    def test_not_a_fix(self):
+        self.assertEqual(self.codes(msg(trailers="Signed-off-by: Test Human <h@example.org>")),
+                         [])
+
+    def test_syzbot_trailers_imply_statements(self):
+        trailers = ("Reported-by: syzbot+0123abcd@syzkaller.appspotmail.com\n"
+                    "Fixes: 0123456789ab (\"net: add foo\")")
+        self.assertEqual(self.codes(msg(trailers=trailers)), ["NETDEV_TESTING_MISSING"])
+        trailers += "\nTested-by: syzbot+0123abcd@syzkaller.appspotmail.com"
+        self.assertEqual(self.codes(msg(trailers=trailers)), [])
+
+    def test_trailers_do_not_count_as_prose(self):
+        trailers = 'Fixes: 0123456789ab ("net: tested foo")\nReported-by: A <a@example.org>'
+        self.assertEqual(self.codes(msg(trailers=trailers)),
+                         ["NETDEV_DISCOVERY_MISSING", "NETDEV_TESTING_MISSING"])
+
+    def test_cli_flag(self):
+        repo = GitRepo.create(make_tmpdir(self))
+        base = repo.commit("init")
+        repo.commit(msg(), {"net/foo.c": "x\n"})
+        res = run_script("commit_msg_lint.py", f"{base}..HEAD", "--repo", repo.path)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        res = run_script("commit_msg_lint.py", f"{base}..HEAD", "--repo", repo.path,
+                         "--netdev", "--json")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertEqual(sorted(f["code"] for f in json.loads(res.stdout)["findings"]),
+                         ["NETDEV_DISCOVERY_MISSING", "NETDEV_TESTING_MISSING"])
+
+
 class CliTest(unittest.TestCase):
     def test_cli(self):
         repo = GitRepo.create(make_tmpdir(self))

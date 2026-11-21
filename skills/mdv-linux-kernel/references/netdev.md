@@ -46,6 +46,41 @@ may lack a `Fixes:`). The commit message gives the user-visible symptom,
 the cause, and why this fix is best. netdev follows the standard stable
 rules (`stable-kernel-rules.rst`) for `Cc: stable@vger.kernel.org`.
 
+### Bug fixes: discovery and testing statement
+
+Read the "Bug fixes" section of `maintainer-netdev.rst` from the tree (it
+appeared in 2026; older trees lack it). As of 7.4-rc3 it asks every bug
+fix to say, in plain English:
+
+- how the issue was discovered and validated (seen in production, found by
+  a fuzzer, by code reading, by an AI tool...), and how the fix was tested;
+- whether reproducing it needed a modified kernel (added delays, debug
+  hacks) or error injection.
+
+Trailers can stand in for part of it: `Reported-by: syzbot+...` implies
+the discovery method and validation.
+
+The document addresses coding agents directly: they must refuse to write
+the commit message unless they know what discovery method to include, and
+by default state that the issue was not triggered and not tested unless
+they know otherwise. So:
+
+- Ask the human how the bug was found; never guess or embellish it.
+- Take "triggered" and "tested" from the evidence store, not from memory:
+  only a `pass` repro or test entry that is not stale backs "reproduced"
+  or "tested". Otherwise write that it was not triggered / not tested.
+- `commit_msg_lint.py --netdev` flags fixes (commits with `Fixes:`) that
+  lack either statement (`NETDEV_DISCOVERY_MISSING`,
+  `NETDEV_TESTING_MISSING`). It is a keyword heuristic: a clean result
+  does not prove the statement is true.
+
+Example:
+
+```
+The issue was found by code inspection while reading the error path and
+was not triggered. Tested only by building with W=1; not run.
+```
+
 ### Series and pace
 
 - No series longer than 15 patches; split it.
