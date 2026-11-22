@@ -80,8 +80,11 @@ def take_snapshot(repo: str, rev_range: str, series: str | None = None) -> dict:
         message = mlk_common.commit_message(repo, sha)
         values = sob_values(message)
         sobs.extend(values)
-        commits.append({"subject": mlk_common.split_message(message)[0], "sob": values,
-                        "attest": attest_values(message)})
+        record = {"subject": mlk_common.split_message(message)[0], "sob": values,
+                  "attest": attest_values(message)}
+        if mlk_common.B4_TRACKING in message:
+            record["b4_cover"] = True  # matched by role: its title is edited later
+        commits.append(record)
     data = {"created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "range": rev_range, "sob": sorted(sobs), "commits": commits}
     with open(snapshot_path(repo, series), "w", encoding="utf-8", newline="\n") as f:
@@ -110,6 +113,7 @@ def check(repo: str, rev_range: str, series: str | None = None) -> list[Finding]
     snap = load_snapshot(repo, series)
     allowed: Counter | None = None
     by_subject: dict[str, list[dict]] | None = None
+    covers: list[dict] = []
     if snap is None:
         findings.append(Finding(
             "NO_SNAPSHOT", "warn",
@@ -120,7 +124,10 @@ def check(repo: str, rev_range: str, series: str | None = None) -> list[Finding]
         if "commits" in snap:  # older snapshots only have the series multiset
             by_subject = {}
             for record in snap["commits"]:
-                by_subject.setdefault(record["subject"], []).append(record)
+                if record.get("b4_cover"):
+                    covers.append(record)
+                else:
+                    by_subject.setdefault(record["subject"], []).append(record)
     for sha in mlk_common.commits_in_range(repo, rev_range):
         message = mlk_common.commit_message(repo, sha)
         for key, value in mlk_common.trailers(message):
@@ -143,7 +150,12 @@ def check(repo: str, rev_range: str, series: str | None = None) -> list[Finding]
         if by_subject is None:
             continue
         # Per patch: a SoB moved between patches keeps the series count unchanged.
-        records = by_subject.get(mlk_common.split_message(message)[0])
+        # b4's cover commit by role: editing the cover title must not orphan
+        # the human's Signed-off-by on it.
+        if mlk_common.B4_TRACKING in message and covers:
+            records = covers
+        else:
+            records = by_subject.get(mlk_common.split_message(message)[0])
         remaining = Counter(values) - flagged
         attest = Counter(attest_values(message))
         if records:

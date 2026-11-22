@@ -189,6 +189,24 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1)
         self.assertEqual([f["code"] for f in json.loads(res.stdout)["findings"]], ["AI_IDENTITY"])
 
+    def test_b4_cover_retitled_keeps_human_sob(self):
+        # The cover title always changes ("EDITME: cover title ..." -> the real
+        # one): the human's sign-off on it must not turn into SOB_UNVERIFIED.
+        cover = B4_COVER.replace("Claude <noreply@anthropic.com>", "Test Human <human@example.org>")
+        self.repo.commit(cover.replace("net: foo: fix bar handling", "EDITME: cover title"))
+        self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n", {"net/foo.c": "int bar;\n"})
+        self.snapshot()
+        tip = self.repo.git("rev-parse", "HEAD")
+        self.repo.git("reset", "-q", "--hard", self.base)
+        self.repo.commit(cover)  # retitled cover
+        self.repo.git("cherry-pick", tip)
+        self.assertEqual(self.check(), (0, []))
+        # A second Signed-off-by on the cover is still caught.
+        self.repo.git("reset", "-q", "--hard", self.base)
+        self.repo.commit(cover.replace("\n\n--- b4", "\nSigned-off-by: Other <o@example.org>\n\n--- b4"))
+        self.repo.git("cherry-pick", tip)
+        self.assertEqual(self.check(), (1, ["SOB_ADDED"]))
+
     def test_snapshot_per_commit_records(self):
         self.repo.commit(f"net: foo: fix\n\nBody.\n\n{HUMAN_SOB}\n")
         self.repo.commit("net: foo: more\n\nBody.\n")
