@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.1 (2026-11-22)
+
+Fixes found by a smoke run on a real kernel tree with b4 0.17-dev and real
+netdev threads from lore.
+
+Skill
+- develop: `BASE` comes from `git merge-base`; `b4 prep --show-info
+  base-commit` fails on a new series with no patch yet.
+
+Scripts
+- Scripts refuse a commit range with an empty start (`..HEAD` from an empty
+  `$BASE`), which git reads as an empty range and reported as clean.
+- `mlk.py`: the sign-off step starts from b4's cover commit
+  (`start-commit`); from the base, the sign-off lands after b4's tracking
+  data and every later `b4 prep`/`b4 send` fails. Re-run commands use the
+  current commit range instead of the shas recorded at the time, which
+  would check the old commits after a rewrite.
+- `review_tracker.py`: a bare `--` followed by quoted text is not a
+  signature (sashiko's inline review was lost); patchwork-bot mails are
+  notices, not comments, and "applied" ones report `APPLIED` (no vN);
+  `[ ... ]` snip markers are not comments.
+- `signoff_guard.py`: b4's cover commit is matched by role, so editing the
+  cover title no longer reports the human's sign-off as `SOB_UNVERIFIED`.
+
 ## 0.5.0 (2026-11-22)
 
 Skill
