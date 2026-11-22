@@ -10,8 +10,13 @@ Three layers:
    ```
 
    They do not prove the scripts work on a real kernel tree.
-2. **Smoke test** on a real kernel checkout (`smoke.sh`): checks the
-   scripts' technical assumptions in an isolated clone.
+2. **Smoke tests** on a real kernel checkout, in an isolated clone:
+   `smoke.sh` checks the scripts' technical assumptions (checkpatch, W=1
+   builds, warning diff, evidence, sign-off guard); `smoke-b4.sh` walks the
+   b4 flow of the references with a real b4 (series, cover letter,
+   recipients, the human's sign-off, `b4 prep -p` / `b4 send -o`,
+   preflight, `mlk.py next` up to `ready`). `--lore N` adds N real review
+   threads for `review_tracker.py` (read-only downloads).
 3. **Behaviour evals** of the agent with the skill installed: scenarios and
    historical patches, run by hand following [`VERIFICATION.md`](VERIFICATION.md),
    the release gate.
@@ -42,6 +47,7 @@ depth:
 | `tools/results.py` | results log (`record`, `summary`) in `results/results.jsonl` |
 | `tools/validate_dataset.py` | schema of `historical/dataset.json`; `--repo` checks the commits in a kernel tree |
 | `smoke.sh` | smoke test on a real kernel checkout |
+| `smoke-b4.sh` | the b4 flow end to end on a real kernel checkout; run it outside the eval shell (it refuses while the send alarms are active) |
 
 ### Audit
 

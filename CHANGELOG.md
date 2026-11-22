@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Evals
+- `smoke-b4.sh`: the b4 flow of the references end to end on a real kernel
+  tree with a real b4, up to `mlk.py next` saying `ready`; `--lore N` adds
+  real review threads. Run against 0.5.0 it fails on four of the 0.5.1
+  fixes.
+
 ## 0.5.1 (2026-11-22)
 
 Fixes found by a smoke run on a real kernel tree with b4 0.17-dev and real

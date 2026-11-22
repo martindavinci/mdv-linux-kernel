@@ -64,10 +64,13 @@ git clone https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git ~/
 git clone https://github.com/martindavinci/mdv-linux-kernel ~/src/mdv-linux-kernel
 ~/src/mdv-linux-kernel/install.sh --agent all
 evals/smoke.sh --kernel ~/src/net-next          # every line must be "ok"
+evals/smoke-b4.sh --kernel ~/src/net-next --lore 3
 ```
 
 Fix any smoke failure before going on; each one is a wrong assumption in the
-skill's scripts.
+skill's scripts. Run `smoke-b4.sh` in a shell without the send alarms of
+section 3 (it refuses to start while they are active): it runs `b4 send -o`,
+which only writes files, and the alarms would log it as a blocked send.
 
 ## 5. Runs
 
