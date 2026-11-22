@@ -352,12 +352,73 @@ class StatusTest(ReviewBase):
         code, findings = self.status("--netdev", "--now", "2026-11-17T09:59:00Z")
         self.assertEqual(code, 1)
         self.assertEqual(findings, ["POSTED_LESS_THAN_24H", "DISCUSSION_ACTIVE"])
+        _, out, _ = self.rt("status", "--netdev", "--now", "2026-11-17T09:59:00Z")
+        self.assertIn("blocked until the time above", out)
+        self.assertNotIn("every comment needs", out)
         code, findings = self.status("--netdev", "--now", "2026-11-17T12:00:00Z")
         self.assertEqual((code, findings), (0, ["DISCUSSION_ACTIVE"]))  # info only
         self.assertEqual(self.status("--netdev", "--now", "2026-11-18T12:00:00Z"), (0, []))
         self.assertEqual(self.status("--now", "2026-11-16T10:30:00Z"), (0, []))
         code, _, _ = self.rt("status", "--now", "yesterday")
         self.assertEqual(code, 2)
+
+
+PATCHWORK = "patchwork-bot+netdevbpf@kernel.org"
+APPLIED_BODY = """Hello:
+
+This series was applied to netdev/net-next.git (main)
+by Jakub Kicinski <kuba@kernel.org>:
+
+On Mon, 16 Nov 2026 10:00:00 +0000 you wrote:
+> net: foo: a
+"""
+
+
+class PatchworkTest(ReviewBase):
+    def applied_mbox(self) -> str:
+        msgs = thread_v1() + [
+            mail("<pw.git-patchwork-notify@kernel.org>",
+                 "Re: [PATCH net-next 0/2] net: foo: fix things", PATCHWORK,
+                 "Tue, 17 Nov 2026 10:00:00 +0000", APPLIED_BODY, "<cover@x>", ("<cover@x>",))]
+        return write_mbox(os.path.join(self.tmp, "applied.mbox"), msgs)
+
+    def test_notice_never_blocks_but_applied_does(self):
+        self.mbox = self.applied_mbox()
+        self.import_v1()
+        notice = self.comments()["pw.git-patchwork-notify@kernel.org#1"]
+        self.assertEqual((notice["kind"], notice["status"]), ("notice", "notice"))
+        self.assertNotIn("pw.git-patchwork-notify@kernel.org#2", self.comments())
+        for cid in ("r1@x#1", "r1@x#2", "r2@x#1", "r4@x#1", "r6@x#1"):
+            self.ok("confirm", cid, "--status", "replied", "--words", "answered")
+        self.assertEqual(self.status(), (1, ["APPLIED"]))
+        code, out, _ = self.rt("status")
+        self.assertIn("the series was applied: no next version", out)
+        code, _, err = self.rt("propose", "pw.git-patchwork-notify@kernel.org#1",
+                               "--status", "replied", "--why", "x")
+        self.assertEqual(code, 1)
+        self.assertIn("patchwork notice", err)
+        out = self.ok("list")
+        comments_part, notices_part = out.split("Patchwork notices (")
+        self.assertNotIn("git-patchwork-notify", comments_part)
+        self.assertIn("pw.git-patchwork-notify@kernel.org#1  notice", notices_part)
+
+    def test_old_store_comment_becomes_notice(self):
+        self.mbox = self.applied_mbox()
+        self.import_v1()
+        path = os.path.join(mlk_common.series_dir(self.repo.path), "review.json")
+        data = self.state()
+        for c in data["comments"]:  # as written before notices existed
+            if c["kind"] == "notice":
+                c["kind"], c["status"] = "comment", "open"
+        data["comments"].append(dict(data["comments"][-1],
+                                     id="pw.git-patchwork-notify@kernel.org#2"))
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        self.import_v1()
+        kinds = {cid: c["kind"] for cid, c in self.comments().items()
+                 if "patchwork" in cid}
+        self.assertEqual(set(kinds.values()), {"notice"})
+        self.assertNotIn("OPEN", [f for f in self.status()[1] if "patchwork" in f])
 
 
 class OutputTest(ReviewBase):
@@ -442,6 +503,21 @@ class ParseTest(unittest.TestCase):
         self.assertTrue(review_tracker.is_bot("syzbot", "syzbot+abc@syzkaller.appspotmail.com"))
         self.assertTrue(review_tracker.is_bot("", "patchwork-bot+netdevbpf@kernel.org"))
         self.assertFalse(review_tracker.is_bot("Ann Abbott", "ann@example.org"))
+
+    def test_bare_dashes_before_quotes_are_not_a_signature(self):
+        # sashiko: summary, a bare "--", then its inline review of the diff.
+        body = ("Found 2 potential issue(s).\n\n--\n\nnet: foo: b\n\n"
+                "> diff --git a/net/foo.c b/net/foo.c\n> +++ b/net/foo.c\n\n[ ... ]\n\n"
+                f"> {HUNK}\n> +int b;\n\n[Severity: Low]\nIs rtnl held?\n\n"
+                "> +int c;\n\n[Severity: Medium]\nLeak on error.\n")
+        blocks, _, _ = review_tracker.extract(body)
+        self.assertEqual(len(blocks), 3)
+        self.assertEqual(blocks[0]["file"], None)  # the top-posted summary
+        self.assertEqual([b["file"] for b in blocks[1:]], ["net/foo.c", "net/foo.c"])
+        self.assertEqual(blocks[2]["text"], "[Severity: Medium]\nLeak on error.")
+        # A bare "--" with only unquoted text after it is still a signature.
+        blocks, _, _ = review_tracker.extract("> +x\n\nNit.\n\n--\nJane\n")
+        self.assertEqual([b["text"] for b in blocks], ["Nit."])
 
     def test_mixed_tag_and_comment(self):
         blocks, tags, only = review_tracker.extract("> +x\n\nLooks good.\n\nAcked-by: A <a@b>\n")

@@ -46,7 +46,9 @@ diff. Top-posted text becomes one comment without a file; a mail that
 cannot be mapped is `unanchored` (check it by hand). Replies that are only
 `Reviewed-by`/`Acked-by`/`Tested-by` are listed as tags: they never block
 and the tracker never writes them anywhere; the human adds them with
-`b4 trailers -u` (section 1).
+`b4 trailers -u` (section 1). patchwork-bot mails are notices, not review;
+one saying the patch or series was applied makes `status` report `APPLIED`:
+no vN, see section 7.
 
 States: `open` -> `proposed` -> `addressed` | `replied` | `wontfix`.
 

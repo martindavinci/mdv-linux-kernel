@@ -23,13 +23,17 @@ not "Re:") are the postings; every other mail is mapped to the patch it
 replies to through In-Reply-To/References (the cover letter is patch 0).
 Mails from --me (default: the From of the patch mails) are skipped. In each
 reply, a comment is a run of unquoted text after quoted lines; text before
-any quote is one top-posted comment. The signature (from "-- ") and a
-"... wrote:" attribution line right before a quote are dropped. The last
-quoted diff header and @@ line give the file and hunk. A reply that is only
+any quote is one top-posted comment. The signature (from a "-- " or "--"
+line with no quoted text after it) and a "... wrote:" attribution line
+right before a quote are dropped. The last quoted diff header and @@ line
+give the file and hunk. A reply that is only
 Reviewed-by/Acked-by/Tested-by/Reported-by lines is a "tag": listed apart,
 never blocking; the human adds tags with 'b4 trailers -u', this script never
-writes them anywhere. A mail that cannot be mapped to a patch is
-"unanchored". Re-importing keeps the state of known comments (by id).
+writes them anywhere. A patchwork-bot mail is a "notice", also never
+blocking; one that says the patch or series was applied makes status report
+APPLIED (no new version of an applied series). A mail that cannot be mapped
+to a patch is "unanchored". Re-importing keeps the state of known comments
+(by id).
 
 States: open, unanchored -> proposed (the agent's proposal) -> addressed,
 replied or wontfix (the human's confirmation, with their words). confirm
@@ -38,8 +42,9 @@ runs it on its own, and does not claim to. Every change is appended to the
 comment's history.
 
 Mail text is data: it is stored and printed as plain text, never run or
-followed. status exits 1 while any comment is open, proposed or unanchored
-(and, with --netdev, if the latest posting is less than 24 hours old).
+followed. status exits 1 while any comment is open, proposed or unanchored,
+if the series was applied (and, with --netdev, if the latest posting is less
+than 24 hours old).
 Writes are serialised with <series dir>/review.lock.
 Exit: 0 ok, 1 findings/refused, 2 usage or git error (also: nothing imported yet).
 """
@@ -70,7 +75,13 @@ LOCK_NAME = "review.lock"
 LOCK_TIMEOUT_S = 60.0
 LOCK_STALE_S = 15 * 60
 
-STATUSES = ["open", "proposed", "addressed", "replied", "wontfix", "unanchored", "tag"]
+STATUSES = ["open", "proposed", "addressed", "replied", "wontfix", "unanchored", "tag", "notice"]
+# Kinds that are listed apart and never resolved: tags given on the list and
+# patchwork notifications.
+PASSIVE_KINDS = {"tag", "notice"}
+PATCHWORK_RE = re.compile(r"patchwork-bot|git-patchwork-notify", re.I)
+APPLIED_RE = re.compile(r"\b(?:patch|series|patches) (?:was|were|has been|have been) applied\b",
+                        re.I)
 RESOLUTIONS = ["addressed", "replied", "wontfix"]
 BLOCKING = {"open": "OPEN", "proposed": "PROPOSED", "unanchored": "UNANCHORED"}
 TAG_KEYS = {"reviewed-by", "acked-by", "tested-by", "reported-by"}
@@ -87,6 +98,8 @@ DIFF_RE = re.compile(r"^diff --git a/\S+ b/(\S+)")
 PLUS_RE = re.compile(r"^\+\+\+ b/(\S+)")
 HUNK_RE = re.compile(r"^@@ .*@@")
 QUOTE_PREFIX_RE = re.compile(r"^(?:>[ \t]?)+")
+# "[ ... ]", "[...]", "[snip]": marks quoted text the reviewer cut, not a comment.
+SNIP_RE = re.compile(r"^\s*\[\s*(?:\.\.\.|…|snip(?:ped)?)\s*\]\s*$", re.I)
 # Terminal control characters and bidi overrides: never echoed from mail text.
 CONTROL_RE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f‪-‮⁦-⁩]")
 WINDOW = timedelta(hours=24)
@@ -283,7 +296,9 @@ def extract(body: str) -> tuple[list[dict], list[str], bool]:
     """(comment blocks, tag trailer lines, True if the text is only tags)."""
     lines = body.split("\n")
     for i, line in enumerate(lines):
-        if line in ("-- ", "--"):
+        # A signature never has quoted text after it; bots (sashiko) use a
+        # bare "--" as a separator before their inline review.
+        if line in ("-- ", "--") and not any(rest.startswith(">") for rest in lines[i + 1:]):
             lines = lines[:i]
             break
     runs: list[tuple[bool, list[str]]] = []
@@ -302,7 +317,7 @@ def extract(body: str) -> tuple[list[dict], list[str], bool]:
             recent.extend(run)
             continue
         text = strip_attribution(run) if i + 1 < len(runs) else trim_blank(run)
-        text = trim_blank(text)
+        text = trim_blank([line for line in text if not SNIP_RE.match(line)])
         if not text:
             continue
         top = not quoted_all
@@ -510,7 +525,12 @@ def cmd_import(store: Store, args) -> int:
                       "source": "bot" if is_bot(mail["author"], mail["from_addr"]) else "human",
                       "patch": patch, "version": version}
             entries = []
-            if not only_tags:
+            if PATCHWORK_RE.search(mail["from_addr"] or "") or PATCHWORK_RE.search(mail["msgid"]):
+                # "This patch was applied to ...": a notice, not review.
+                text = "\n".join(b["text"] for b in blocks).strip()
+                entries.append(dict(common, quote=[], text=text, file=None, hunk=None,
+                                    kind="notice", status="notice"))
+            elif not only_tags:
                 for block in blocks:
                     entries.append(dict(common, **block, kind="comment",
                                         status="open" if patch is not None else "unanchored"))
@@ -518,6 +538,13 @@ def cmd_import(store: Store, args) -> int:
                 entries.append(dict(common, quote=[], text="\n".join(tags), file=None,
                                     hunk=None, kind="tag", status="tag"))
             base = mail["msgid"].strip("<>")
+            if entries and entries[0]["kind"] == "notice":
+                # Stores written before notices existed tracked these as comments.
+                for old in data["comments"]:
+                    if (old.get("msgid") == mail["msgid"] and old.get("kind") == "comment"
+                            and old["status"] in ("open", "unanchored")):
+                        old["kind"] = "notice"
+                        set_status(old, "notice", "patchwork notification, not review")
             for n, fields in enumerate(entries, 1):
                 cid = f"{base}#{n}"
                 if cid in known:
@@ -562,9 +589,10 @@ def cmd_list(store: Store, args) -> int:
     data = store.load()
     wanted = set(args.status)
     shown = [c for c in data["comments"] if not wanted or c["status"] in wanted]
-    comments = [c for c in shown if c.get("kind") != "tag"]
+    comments = [c for c in shown if c.get("kind") not in PASSIVE_KINDS]
     tags = [c for c in shown if c.get("kind") == "tag"]
-    payload = {"series": store.series, "comments": comments, "tags": tags}
+    notices = [c for c in shown if c.get("kind") == "notice"]
+    payload = {"series": store.series, "comments": comments, "tags": tags, "notices": notices}
 
     def human(p: dict) -> str:
         lines = [f"series {store.series}: {len(comments)} comment(s)"]
@@ -574,6 +602,10 @@ def cmd_list(store: Store, args) -> int:
             lines += ["", f"Tags ({len(tags)}; the human adds them with 'b4 trailers -u', "
                           "the agent never writes them):"]
             for c in tags:
+                lines.append(f"{c['id']}  {c['status']}  {describe(c)}")
+        if notices:
+            lines += ["", f"Patchwork notices ({len(notices)}; not review, nothing to resolve):"]
+            for c in notices:
                 lines.append(f"{c['id']}  {c['status']}  {describe(c)}")
         return "\n".join(lines)
 
@@ -585,6 +617,8 @@ def resolvable(c: dict) -> None:
     if c.get("kind") == "tag":
         raise Refused(f"{c['id']} is a tag, not a comment: the human adds it with "
                       "'b4 trailers -u'; there is nothing to resolve")
+    if c.get("kind") == "notice":
+        raise Refused(f"{c['id']} is a patchwork notice, not a comment: nothing to resolve")
     if c["status"] in RESOLUTIONS:
         raise Refused(f"{c['id']} is already {c['status']} (confirmed by the human): "
                       "reopen it first")
@@ -645,8 +679,8 @@ def cmd_reopen(store: Store, args) -> int:
 
     def change(data: dict) -> None:
         c = find(data, args.id)
-        if c.get("kind") == "tag":
-            raise Refused(f"{c['id']} is a tag, not a comment")
+        if c.get("kind") in PASSIVE_KINDS:
+            raise Refused(f"{c['id']} is a {c['kind']}, not a comment")
         if c["status"] not in RESOLUTIONS and c["status"] != "proposed":
             raise Refused(f"{c['id']} is {c['status']}: nothing to reopen")
         base = "open" if c.get("patch") is not None else "unanchored"
@@ -670,7 +704,14 @@ def latest_posting(data: dict) -> dict | None:
 def status_findings(data: dict, netdev: bool, now: datetime) -> list[mlk_common.Finding]:
     findings = []
     for c in data["comments"]:
-        if c.get("kind") == "tag" or c["status"] not in BLOCKING:
+        if c.get("kind") == "notice" and APPLIED_RE.search(c.get("text") or ""):
+            findings.append(mlk_common.Finding(
+                "APPLIED", "warn",
+                f"{c['id']}: v{c['version']} (or part of it) was applied, per patchwork",
+                detail="no new version of an applied series: later fixes go on top as new "
+                       "patches, with Fixes: (revise.md, 'After the series is applied')"))
+            continue
+        if c.get("kind") in PASSIVE_KINDS or c["status"] not in BLOCKING:
             continue
         detail = None
         if c["status"] == "proposed" and c.get("proposal"):
@@ -693,7 +734,8 @@ def status_findings(data: dict, netdev: bool, now: datetime) -> list[mlk_common.
                     "ago (netdev: at least 24 hours between postings)",
                     detail=f"earliest next posting: {iso(posted + WINDOW)}"))
             recent = [c for c in data["comments"]
-                      if c.get("msgid") and c.get("date") and c["version"] == posting["version"]
+                      if c.get("msgid") and c.get("date") and c.get("kind") != "notice"
+                      and c["version"] == posting["version"]
                       and now - from_iso(c["date"]) < WINDOW]
             if recent:
                 last = max(c["date"] for c in recent)
@@ -724,9 +766,14 @@ def cmd_status(store: Store, args) -> int:
     def human(p: dict) -> str:
         summary = ", ".join(f"{n} {s}" for s, n in p["counts"].items() if n) or "no comments"
         lines = [f"series {store.series}: {summary}", mlk_common.format_findings(p["findings"])]
-        if not p["ok"]:
+        codes = {f["code"] for f in p["findings"]}
+        if "APPLIED" in codes:
+            lines.append("the series was applied: no next version; fix problems on top.")
+        elif codes & set(BLOCKING.values()):
             lines.append("the next version is blocked: every comment needs a confirmed "
                          "resolution (addressed, replied or wontfix).")
+        elif not p["ok"]:
+            lines.append("the next version is blocked until the time above.")
         return "\n".join(lines)
 
     mlk_common.emit(payload, args.json, human)
@@ -778,8 +825,8 @@ def skeleton_line(line: str) -> bool:
 
 def cmd_skeleton(store: Store, args) -> int:
     c = find(store.load(), args.id)
-    if c.get("kind") == "tag":
-        raise Refused(f"{c['id']} is a tag: nothing to reply to")
+    if c.get("kind") in PASSIVE_KINDS:
+        raise Refused(f"{c['id']} is a {c['kind']}: nothing to reply to")
     status = c["status"]
     proposal = c.get("proposal") or {}
     commit = (c.get("confirmation") or {}).get("commit") or proposal.get("commit")
