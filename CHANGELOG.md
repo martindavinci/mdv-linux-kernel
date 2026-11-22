@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2 (2026-11-22)
 
 Evals
 - `smoke-b4.sh`: the b4 flow of the references end to end on a real kernel
