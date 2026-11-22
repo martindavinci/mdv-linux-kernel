@@ -37,13 +37,17 @@ b4 prep --set-prefixes net-next     # or net
 Immediately after the human's `b4 prep`, before you change any commit:
 
 ```
-BASE=$(b4 prep --show-info base-commit)
+BASE=$(git merge-base HEAD net-next/main)   # the tree given to b4 prep
 python3 <skill-dir>/scripts/evidence.py init --base "$BASE"
 python3 <skill-dir>/scripts/evidence.py require --preset netdev   # or generic outside netdev
 python3 <skill-dir>/scripts/signoff_guard.py snapshot "$BASE..HEAD"
 python3 <skill-dir>/scripts/evidence.py note --key policy --value "<policy_snapshot summary>"
 SERIES=$(python3 <skill-dir>/scripts/evidence.py where)
 ```
+
+`b4 prep --show-info base-commit` gives the same commit, but only once the
+series has a patch: on a new, empty series b4 fails and `$BASE` would be
+empty (the scripts refuse a range with no start).
 
 Both the store and the snapshot belong to the current branch (the b4 prep
 branch): another series, or another worktree, gets its own. On a detached

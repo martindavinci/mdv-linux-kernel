@@ -156,7 +156,9 @@ private channel; explain the rules that apply, read from the tree.
   SERIES=$(python3 <skill-dir>/scripts/evidence.py where)                   # this series
   ```
 - The series is managed by `b4 prep` (default `commit` cover strategy: an
-  empty cover-letter commit at the start of the series). In a prep branch:
+  empty cover-letter commit at the start of the series). In a prep branch
+  with at least one patch (on an empty series b4 fails; see
+  `references/develop.md`, step 2):
   ```
   BASE=$(b4 prep --show-info base-commit)    # fork point
   START=$(b4 prep --show-info start-commit)  # the cover-letter commit

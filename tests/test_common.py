@@ -81,6 +81,14 @@ class GitHelpersTest(unittest.TestCase):
         b = self.repo.commit("b")
         c = self.repo.commit("c")
         self.assertEqual(mlk_common.commits_in_range(self.repo.path, f"{a}..HEAD"), [b, c])
+        self.assertEqual(mlk_common.commits_in_range(self.repo.path, f"{a}.."), [b, c])
+
+    def test_range_with_empty_start_refused(self):
+        # An empty $BASE turns "$BASE..HEAD" into "..HEAD": git checks nothing.
+        self.repo.commit("a")
+        for rng in ("..HEAD", "...HEAD", " ..HEAD"):
+            with self.assertRaises(mlk_common.GitError):
+                mlk_common.commits_in_range(self.repo.path, rng)
 
     def test_commit_message_crlf_normalised(self):
         sha = self.repo.commit("net: x\r\n\r\nbody\r\n")

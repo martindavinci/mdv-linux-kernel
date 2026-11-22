@@ -90,6 +90,11 @@ def series_dir(repo: str, explicit: str | None = None) -> str:
 
 
 def commits_in_range(repo: str, rev_range: str) -> list[str]:
+    # git reads "..HEAD" as "HEAD..HEAD": an empty $BASE would silently check
+    # nothing and report a clean result.
+    left, sep, _ = rev_range.partition("..")
+    if sep and not left.strip():
+        raise GitError(f"range '{rev_range}' has no start: is the base variable empty?")
     out = git(["rev-list", "--reverse", rev_range, "--"], repo)
     return out.split()
 
