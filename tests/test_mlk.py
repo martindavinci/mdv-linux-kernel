@@ -2,7 +2,9 @@
 """Tests for mlk.py (next and report) on toy kernel-like repositories."""
 from __future__ import annotations
 
+import email.message
 import json
+import mailbox
 import os
 import sys
 import unittest
@@ -154,6 +156,19 @@ class NextTest(unittest.TestCase):
         self.assertIn("--signoff", sign["next"]["cmd"])
         self.assertEqual(p["next"], sign["next"])
 
+    def test_signoff_starts_after_the_b4_cover(self):
+        # A sign-off appended to b4's cover commit lands after its tracking
+        # JSON and breaks every later b4 prep/send: start from the cover.
+        s = Series(self)
+        s.repo.commit("cover\n\n--- b4-submit-tracking ---\n# x\n{}\n")
+        s.repo.commit(FIX.replace(SOB, ""), {"lib/foo.c": "x\n"})
+        s.ready_store()
+        _, p = s.next()
+        self.assertEqual(p["patches"], 1)
+        sign = next(it for it in p["blocking"] if it["id"] == "signoff")
+        self.assertEqual(sign["next"]["cmd"],
+                         'git rebase --signoff "$(b4 prep --show-info start-commit)"')
+
     def test_failed_check_can_be_confirmed_missing_cannot(self):
         s = Series(self)
         s.repo.commit(FIX, {"lib/foo.c": "x\n"})
@@ -199,6 +214,52 @@ class NextTest(unittest.TestCase):
         rt("confirm", "manual-1", "--words", "yes, fixed in v2")
         _, p = s.next()
         self.assertEqual(p["phase"], "submit")
+
+    def test_rerun_uses_current_range_not_recorded_shas(self):
+        # "$RANGE" is expanded by the shell: the entry records literal shas.
+        # Re-running those after a rewrite would check the old commits.
+        s = Series(self)
+        cover = s.repo.commit("cover\n\n--- b4-submit-tracking ---\n# x\n{}\n")
+        old = s.repo.commit(FIX, {"lib/foo.c": "x\n"})
+        s.ready_store()
+        for name, rng in (("lint", f"{cover}..{old}"), ("lint-all", f"{s.base}..{old}")):
+            s.ev("require", "--name", name, "--category", "style", "--why", "x")
+            res = run_script("evidence.py", "run", "--repo", s.repo.path, "--name", name,
+                             "--category", "style", "--", sys.executable, "-c", "pass", rng)
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        s.repo.git("commit", "-q", "--amend", "-m", FIX + "\nLink: https://example.org/x\n")
+        _, p = s.next()
+        cmds = {it["id"]: it["next"]["cmd"] for it in p["blocking"]}
+        self.assertIn(f"{cover[:12]}..HEAD", cmds["lint"])
+        self.assertIn(f"{s.base[:12]}..HEAD", cmds["lint-all"])
+        for cmd in cmds.values():
+            self.assertNotIn(old[:12], cmd or "")
+
+    def test_applied_series_has_no_next_version(self):
+        s = Series(self)
+        s.repo.commit(FIX, {"lib/foo.c": "x\n"})
+        s.ready_store()
+        box_path = os.path.join(s.repo.path, ".git", "applied.mbox")  # keeps the tree clean
+        box = mailbox.mbox(box_path)
+        for msgid, subj, frm, body, parent in (
+                ("<p@x>", "[PATCH net-next] lib: foo: fix", "Me <me@example.org>",
+                 "lib: foo: fix\n", None),
+                ("<pw@x>", "Re: [PATCH net-next] lib: foo: fix",
+                 "patchwork-bot+netdevbpf@kernel.org",
+                 "Hello:\n\nThis patch was applied to netdev/net-next.git (main)\n", "<p@x>")):
+            msg = email.message.EmailMessage()
+            msg["Message-ID"], msg["Subject"], msg["From"] = msgid, subj, frm
+            msg["Date"] = "Mon, 16 Nov 2026 10:00:00 +0000"
+            if parent:
+                msg["In-Reply-To"] = parent
+            msg.set_content(body)
+            box.add(msg)
+        box.close()
+        res = run_script("review_tracker.py", "import", box_path, "--repo", s.repo.path)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        _, p = s.next()
+        self.assertEqual((p["phase"], ids(p)), ("revise", ["review:applied"]))
+        self.assertIn("no new version", p["next"]["do"])
 
     def test_dirty_tree_blocks(self):
         s = Series(self)

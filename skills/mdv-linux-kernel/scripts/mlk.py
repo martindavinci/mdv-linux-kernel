@@ -88,6 +88,7 @@ class Context:
         self.b4 = self._b4_info()
         self.base = (self.data or {}).get("base") or self.b4.get("base-commit") \
             or self._merge_base()
+        self.cover: str | None = None  # b4's cover-letter commit, set by _commits()
         self.commits = self._commits()
         self.netdev = self._netdev() if netdev is None else netdev
         self.state = evidence.current_state(repo, self.base) if self.base else None
@@ -120,8 +121,10 @@ class Context:
             return []
         shas = mlk_common.commits_in_range(self.repo, f"{self.base}..HEAD")
         # b4's cover-letter commit is not a patch.
-        return [s for s in shas
-                if mlk_common.B4_TRACKING not in mlk_common.commit_message(self.repo, s)]
+        covers = [s for s in shas
+                  if mlk_common.B4_TRACKING in mlk_common.commit_message(self.repo, s)]
+        self.cover = covers[0] if covers else None
+        return [s for s in shas if s not in covers]
 
     def _netdev(self) -> bool:
         if "net" in self.b4.get("prefixes", "").split() or \
@@ -219,6 +222,12 @@ def gate_revise(ctx: Context) -> list[dict]:
     for f in payload.get("findings", []):
         if f.get("severity") == "info" or f.get("code") == "POSTED_LESS_THAN_24H":
             continue
+        if f.get("code") == "APPLIED":
+            out.append(item("review:applied", "applied", f.get("message", ""),
+                            do="no new version: send later fixes as new patches on top, "
+                               "with Fixes:",
+                            doc="references/revise.md", confirmable=False))
+            continue
         # Review comments are resolved in the tracker (propose/confirm), not here.
         cid = (f.get("message") or "").partition(": ")[0] or str(len(out) + 1)
         proposed = f.get("code") == "PROPOSED"
@@ -246,12 +255,34 @@ def review_status(ctx: Context) -> dict | None:
         return None
 
 
-def rerun_cmd(entry: dict) -> str | None:
+SHA_RANGE_RE = re.compile(r"\b([0-9a-f]{7,40})\.\.\.?(?:[0-9a-f]{7,40}\b|HEAD\b)")
+
+
+def fresh_ranges(cmd: str, ctx: Context) -> str:
+    """Rewrite commit ranges recorded as literal shas to the current series.
+
+    The shell expands "$RANGE" before evidence.py sees it, so a recorded
+    command names the commits of that moment. After any rewrite (cover edit,
+    trailers, sign-off) re-running it as recorded would check the old commits
+    and record a pass for the new HEAD.
+    """
+    if not ctx.base:
+        return cmd
+
+    def repl(m: re.Match) -> str:
+        start = ctx.base if ctx.base.startswith(m.group(1)) else (ctx.cover or ctx.base)
+        return f"{start[:12]}..HEAD"
+
+    return SHA_RANGE_RE.sub(repl, cmd)
+
+
+def rerun_cmd(entry: dict, ctx: Context | None = None) -> str | None:
     if not entry.get("cmd"):
         return None
     flags = [f"--name {entry['name']}", f"--category {entry['category']}"]
     flags += [f"--input {path}" for path in entry.get("inputs") or {}]
-    return skill_cmd("evidence.py", "run " + " ".join(flags) + " -- " + entry["cmd"])
+    cmd = fresh_ranges(entry["cmd"], ctx) if ctx else entry["cmd"]
+    return skill_cmd("evidence.py", "run " + " ".join(flags) + " -- " + cmd)
 
 
 def gate_validate(ctx: Context) -> list[dict]:
@@ -275,7 +306,7 @@ def gate_validate(ctx: Context) -> list[dict]:
                                       if e.get("code_unchanged") else "")
             out.append(item(e["name"], st, why or f"{st} result",
                             do="fix it and re-run" if st == "fail" else "re-run it",
-                            cmd=rerun_cmd(e), doc="references/validate.md"))
+                            cmd=rerun_cmd(e, ctx), doc="references/validate.md"))
     out += note_items(ctx, "validate")
     return out
 
@@ -302,10 +333,13 @@ def gate_submit(ctx: Context) -> list[dict]:
                 if not any(k.lower() == "signed-off-by" for k, _ in
                            mlk_common.trailers(mlk_common.commit_message(ctx.repo, s)))]
     if unsigned:
+        # From the b4 cover commit, never the base: a sign-off appended to the
+        # cover lands after b4's tracking data and b4 can no longer read it.
+        start = '"$(b4 prep --show-info start-commit)"' if ctx.cover else ctx.base[:12]
         out.append(item("signoff", "missing",
                         f"{len(unsigned)} patch(es) without the human's Signed-off-by",
                         do="the human certifies the DCO and signs off; the agent never does",
-                        cmd=f"git rebase --signoff {ctx.base[:12]}", who="human",
+                        cmd=f"git rebase --signoff {start}", who="human",
                         doc="references/signoff-dco.md", confirmable=False))
     names = {e["name"]: e["effective_status"] for e in ctx.entries}
     if names.get("preflight") != "pass":
